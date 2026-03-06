@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-WORKDIR /app
+WORKDIR /srv
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,10 +12,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Application
-COPY . .
+COPY . /srv/backend
+ENV PYTHONPATH=/srv
 
 # Create data directory
-RUN mkdir -p /app/data
+RUN mkdir -p /srv/backend/data
 
 EXPOSE 8000
 
