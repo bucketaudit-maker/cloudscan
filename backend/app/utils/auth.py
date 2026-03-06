@@ -8,7 +8,7 @@ import hmac
 import json
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import request, jsonify, g
 
@@ -98,7 +98,7 @@ def auth_required(f):
         if api_key:
             with get_db() as db:
                 user = db.execute(
-                    "SELECT id, tier, is_active FROM users WHERE api_key=?", (api_key,)
+                    "SELECT id, tier, is_active FROM users WHERE api_key=%s", (api_key,)
                 ).fetchone()
                 if not user:
                     return jsonify({"error": "Invalid API key"}), 401
@@ -132,7 +132,7 @@ def auth_required_strict(f):
         api_key = request.headers.get("X-API-Key") or request.args.get("access_token")
         if api_key:
             with get_db() as db:
-                user = db.execute("SELECT id, tier FROM users WHERE api_key=? AND is_active=1", (api_key,)).fetchone()
+                user = db.execute("SELECT id, tier FROM users WHERE api_key=%s AND is_active=1", (api_key,)).fetchone()
                 if user:
                     g.user_id = user["id"]
                     g.user_tier = user["tier"]
@@ -153,19 +153,29 @@ def rate_limit(f):
 
         with get_db() as db:
             user = db.execute(
-                "SELECT tier, queries_today, queries_reset_at FROM users WHERE id=?",
+                "SELECT tier, queries_today, queries_reset_at FROM users WHERE id=%s",
                 (g.user_id,)
             ).fetchone()
 
             if user:
                 limit = settings.rate_limits.get(user["tier"], 100)
                 reset_at = user["queries_reset_at"]
+                now_utc = datetime.now(timezone.utc)
 
                 # Reset daily counter if needed
-                if reset_at and datetime.fromisoformat(reset_at) < datetime.utcnow():
+                if reset_at:
+                    if isinstance(reset_at, datetime):
+                        parsed = reset_at
+                    else:
+                        parsed = datetime.fromisoformat(str(reset_at))
+                    reset_dt = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+                else:
+                    reset_dt = None
+
+                if reset_dt and reset_dt < now_utc:
                     db.execute(
-                        "UPDATE users SET queries_today=1, queries_reset_at=? WHERE id=?",
-                        ((datetime.utcnow() + timedelta(days=1)).isoformat(), g.user_id),
+                        "UPDATE users SET queries_today=1, queries_reset_at=%s WHERE id=%s",
+                        ((now_utc + timedelta(days=1)).isoformat(), g.user_id),
                     )
                 elif user["queries_today"] >= limit:
                     return jsonify({
@@ -175,7 +185,7 @@ def rate_limit(f):
                         "reset_at": reset_at,
                     }), 429
                 else:
-                    db.execute("UPDATE users SET queries_today=queries_today+1 WHERE id=?", (g.user_id,))
+                    db.execute("UPDATE users SET queries_today=queries_today+1 WHERE id=%s", (g.user_id,))
 
         return f(*args, **kwargs)
 

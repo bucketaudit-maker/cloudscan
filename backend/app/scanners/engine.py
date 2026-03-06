@@ -225,6 +225,34 @@ def generate_bucket_names(
         length = random.randint(6, 14)
         names.add("".join(random.choices(string.ascii_lowercase + string.digits, k=length)))
 
+    # Strategy 5: Broader synthetic patterns to better fill max_names, even without companies
+    seeds = []
+    if keywords:
+        seeds.extend([k.lower().strip() for k in keywords if k and k.strip()])
+    seeds.extend(COMMON_WORDS[:40])
+    seeds = [re.sub(r"[^a-z0-9.\-]", "-", s) for s in seeds if s]
+    years = ["2022", "2023", "2024", "2025", "2026", "01", "1", "dev", "prod", "staging", "test"]
+
+    attempts = 0
+    while len(names) < max_names and attempts < (max_names * 30):
+        attempts += 1
+        a = random.choice(seeds)
+        b = random.choice(SUFFIXES)
+        sep = random.choice(SEPARATORS[:3])
+        pattern = random.randint(0, 4)
+        if pattern == 0:
+            candidate = f"{a}{sep}{b}"
+        elif pattern == 1:
+            candidate = f"{a}{sep}{random.choice(years)}"
+        elif pattern == 2:
+            candidate = f"{a}{sep}{b}{sep}{random.choice(years)}"
+        elif pattern == 3:
+            candidate = f"{random.choice(years)}{sep}{a}{sep}{b}"
+        else:
+            suffix_digits = random.randint(1, 9999)
+            candidate = f"{a}{sep}{b}{suffix_digits}"
+        names.add(candidate)
+
     # Validate bucket names (S3 rules: 3-63 chars, lowercase, alphanumeric + hyphen + dot)
     valid = set()
     for name in names:
@@ -274,12 +302,50 @@ class BucketScanner:
 
     def _build_url(self, provider: Provider, name: str, region: str) -> str:
         cfg = PROVIDER_CONFIGS[provider]
-        template = cfg["url_templates"][0]
-        if "{region}" in template and region:
-            return template.format(name=name, region=region)
-        elif "{region}" in template:
-            return template.format(name=name, region=cfg["regions"][0] if cfg["regions"] else "")
-        return template.format(name=name)
+        templates = cfg["url_templates"]
+
+        # Prefer a region-aware template when a region is provided.
+        if region:
+            for template in templates:
+                if "{region}" in template:
+                    return template.format(name=name, region=region)
+
+        # Otherwise, prefer a global/non-region template.
+        for template in templates:
+            if "{region}" not in template:
+                return template.format(name=name)
+
+        # Fallback for providers that only support region-aware hostnames.
+        template = templates[0]
+        fallback_region = region or (cfg["regions"][0] if cfg["regions"] else "")
+        return template.format(name=name, region=fallback_region)
+
+    def _build_probe_urls(self, provider: Provider, name: str, region: str) -> list[str]:
+        """Return ordered candidate URLs to probe for a bucket."""
+        if provider != Provider.AWS:
+            return [self._build_url(provider, name, region)]
+
+        # AWS S3 API endpoints return 404 for all unauthenticated requests
+        # (anti-enumeration). Use website endpoints which still return
+        # distinct responses: 200 (open), 403 (private), 400 (wrong region),
+        # 404+NoSuchWebsiteConfiguration (exists, no website config),
+        # 404+NoSuchBucket (truly doesn't exist).
+        urls = []
+        if region:
+            # Both website URL styles (dash-style and dot-style)
+            urls.append(f"http://{name}.s3-website-{region}.amazonaws.com")
+            urls.append(f"http://{name}.s3-website.{region}.amazonaws.com")
+        # S3 API endpoints as fallback (still useful for open/listable buckets)
+        urls.append(f"https://{name}.s3.amazonaws.com")
+
+        # De-duplicate while preserving order.
+        seen = set()
+        deduped = []
+        for u in urls:
+            if u not in seen:
+                seen.add(u)
+                deduped.append(u)
+        return deduped
 
     async def check_bucket(self, provider: Provider, name: str, region: str = "") -> BucketResult:
         """Probe a single bucket for accessibility."""
@@ -291,22 +357,83 @@ class BucketScanner:
         try:
             async with self.semaphore:
                 session = await self._ensure_session()
-                async with session.get(url, allow_redirects=True, ssl=False) as resp:
-                    body = await resp.text(errors="replace")
-                    result.scan_time_ms = int((time.monotonic() - start) * 1000)
+                candidate_urls = self._build_probe_urls(provider, name, region)
+                any_not_found = False
+                last_error = ""
 
-                    if resp.status == 200 and cfg["list_marker"] in body:
-                        result.status = "open"
-                        result.files = self._parse_listing(body, url, name)
-                        result.file_count = len(result.files)
-                    elif resp.status == 403 or cfg["denied_marker"] in body:
-                        result.status = "closed"
-                    elif resp.status == 404 or cfg["missing_marker"] in body:
-                        result.status = "not_found"
-                    elif resp.status == 200:
-                        result.status = "partial"
-                    else:
-                        result.status = "not_found"
+                for probe_url in candidate_urls:
+                    try:
+                        async with session.get(
+                            probe_url,
+                            allow_redirects=(provider != Provider.AWS),
+                            ssl=False,
+                        ) as resp:
+                            body = await resp.text(errors="replace")
+                            result.scan_time_ms = int((time.monotonic() - start) * 1000)
+                            result.url = probe_url
+
+                            if logger.isEnabledFor(logging.DEBUG):
+                                body_snippet = body[:300].replace("\n", " ")
+                                logger.debug(
+                                    f"[{provider.value}] {name} → {resp.status} "
+                                    f"region_hdr={resp.headers.get('x-amz-bucket-region', '')} "
+                                    f"body={body_snippet}"
+                                )
+
+                            aws_region_hint = resp.headers.get("x-amz-bucket-region", "").strip()
+                            is_aws_redirect = (
+                                provider == Provider.AWS
+                                and (
+                                    resp.status in (301, 307, 400)
+                                    or "PermanentRedirect" in body
+                                    or "AuthorizationHeaderMalformed" in body
+                                    or "IncorrectEndpoint" in body
+                                )
+                            )
+
+                            if resp.status == 200 and cfg["list_marker"] in body:
+                                result.status = "open"
+                                result.files = self._parse_listing(body, probe_url, name)
+                                result.file_count = len(result.files)
+                                return result
+                            if resp.status == 200:
+                                # Website endpoint returned content (bucket is public)
+                                result.status = "open"
+                                return result
+                            if resp.status == 403 or cfg["denied_marker"] in body:
+                                result.status = "closed"
+                                return result
+                            if is_aws_redirect:
+                                # Bucket exists but in a different AWS region.
+                                result.status = "closed"
+                                if aws_region_hint:
+                                    result.region = aws_region_hint
+                                else:
+                                    m = re.search(r'<Endpoint>.*?\.s3[.-]([a-z0-9-]+)\.amazonaws', body)
+                                    if not m:
+                                        m = re.search(r's3-website[.-]([a-z0-9-]+)\.amazonaws', body)
+                                    if m:
+                                        result.region = m.group(1)
+                                result.url = self._build_url(provider, name, result.region or region)
+                                return result
+                            if "NoSuchWebsiteConfiguration" in body:
+                                # Bucket exists but has no website config — still a discovery.
+                                result.status = "closed"
+                                return result
+                            if resp.status == 404 or cfg["missing_marker"] in body:
+                                any_not_found = True
+                                continue
+                            any_not_found = True
+                    except asyncio.TimeoutError:
+                        last_error = "timeout"
+                    except aiohttp.ClientError as e:
+                        last_error = str(e)[:200]
+
+                if last_error and not any_not_found:
+                    result.status = "error"
+                    result.error = last_error
+                else:
+                    result.status = "not_found"
 
         except asyncio.TimeoutError:
             result.status = "error"
@@ -433,8 +560,8 @@ class BucketScanner:
                 elif result.status == "error":
                     self.progress.errors += 1
 
-                # Emit progress every 50 checks
-                if self.progress.names_checked % 50 == 0 and on_progress:
+                # Emit progress every 10 checks (or on first check)
+                if on_progress and (self.progress.names_checked <= 1 or self.progress.names_checked % 10 == 0):
                     on_progress(self.progress)
 
         self.progress.phase = "complete"
@@ -518,3 +645,159 @@ async def enumerate_bucket_deep(
 
     logger.info(f"Enumerated {len(all_files)} files from {bucket_name} ({page} pages)")
     return all_files
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CLI ENTRYPOINT
+# ═══════════════════════════════════════════════════════════════════
+
+def main():
+    """CLI entrypoint: python3 -m backend.app.scanners.engine"""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="CloudScan — Multi-Provider Bucket Discovery Scanner",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python3 -m backend.app.scanners.engine -k backup database credentials
+  python3 -m backend.app.scanners.engine -k secret -c acme-corp globex -p aws gcp -n 2000
+  python3 -m backend.app.scanners.engine -k terraform .env config -n 5000 --concurrency 100
+        """,
+    )
+    parser.add_argument("-k", "--keywords", nargs="+", default=[], help="Keywords for name generation")
+    parser.add_argument("-c", "--companies", nargs="+", default=[], help="Company names for targeted scanning")
+    parser.add_argument("-p", "--providers", nargs="+", default=[],
+                        choices=["aws", "azure", "gcp", "digitalocean", "alibaba"],
+                        help="Providers to scan (default: all)")
+    parser.add_argument("-n", "--max-names", type=int, default=500, help="Max candidate names (default: 500)")
+    parser.add_argument("-r", "--regions", type=int, default=3, help="Regions per provider (default: 3)")
+    parser.add_argument("--concurrency", type=int, default=50, help="Concurrent requests (default: 50)")
+    parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds (default: 10)")
+    parser.add_argument("--no-db", action="store_true", help="Don't persist results to database")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
+    args = parser.parse_args()
+
+    if not args.keywords and not args.companies:
+        parser.error("At least --keywords or --companies required")
+
+    if aiohttp is None:
+        print("ERROR: aiohttp is required for scanning. Install: pip install aiohttp")
+        sys.exit(1)
+
+    # Setup logging
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    # Resolve providers
+    target_providers = [Provider(p) for p in args.providers] if args.providers else list(Provider)
+
+    # DB setup (optional)
+    db_store = None
+    if not args.no_db:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+            from backend.app.models.database import init_db, BucketStore, FileStore
+            init_db()
+            db_store = (BucketStore, FileStore)
+            logger.info("Database connected — results will be persisted")
+        except Exception as e:
+            logger.warning(f"Database unavailable ({e}) — results will only be printed")
+
+    # Progress display
+    open_buckets = []
+
+    def on_progress(progress: ScanProgress):
+        pct = (progress.names_checked / progress.names_total * 100) if progress.names_total else 0
+        bar = "█" * int(pct / 2.5) + "░" * (40 - int(pct / 2.5))
+        sys.stdout.write(
+            f"\r  [{bar}] {pct:5.1f}%  "
+            f"checked={progress.names_checked}/{progress.names_total}  "
+            f"found={progress.buckets_found}  "
+            f"open={progress.buckets_open}  "
+            f"files={progress.files_indexed}  "
+            f"errors={progress.errors}  "
+            f"[{progress.provider}]    "
+        )
+        sys.stdout.flush()
+
+    def on_result(result: BucketResult):
+        if result.status in ("open", "closed", "partial"):
+            icon = {"open": "🟢", "closed": "🔴", "partial": "🟡"}.get(result.status, "⚪")
+            file_info = f" — {result.file_count} files" if result.file_count else ""
+            print(f"\n  {icon} [{result.provider:>12}] {result.name:<40} {result.status.upper()}{file_info}  ({result.scan_time_ms}ms)")
+
+            if result.status == "open":
+                open_buckets.append(result)
+
+            # Persist to DB
+            if db_store and result.status in ("open", "closed", "partial"):
+                try:
+                    BStore, FStore = db_store
+                    provider_id = PROVIDER_DB_IDS.get(Provider(result.provider), 1)
+                    bucket = BStore.upsert(
+                        provider_id=provider_id, name=result.name,
+                        region=result.region, url=result.url,
+                        status=result.status, scan_time_ms=result.scan_time_ms,
+                    )
+                    if result.status == "open" and result.files:
+                        FStore.insert_batch(bucket["id"], result.files)
+                except Exception as e:
+                    logger.error(f"DB persist error for {result.name}: {e}")
+
+    # Run scan
+    print(f"\n☁  CloudScan — Discovery Scan")
+    print(f"   Keywords:  {', '.join(args.keywords) if args.keywords else '—'}")
+    print(f"   Companies: {', '.join(args.companies) if args.companies else '—'}")
+    print(f"   Providers: {', '.join(p.value for p in target_providers)}")
+    print(f"   Max names: {args.max_names}")
+    print(f"   Concurrency: {args.concurrency}")
+    print()
+
+    async def _run():
+        scanner = BucketScanner(
+            concurrency=args.concurrency,
+            timeout=args.timeout,
+        )
+        try:
+            results = await scanner.run_discovery(
+                providers=target_providers,
+                keywords=args.keywords if args.keywords else None,
+                companies=args.companies if args.companies else None,
+                max_names=args.max_names,
+                regions_per_provider=args.regions,
+                on_progress=on_progress,
+                on_result=on_result,
+            )
+            return results, scanner.progress
+        finally:
+            await scanner.close()
+
+    results, final_progress = asyncio.run(_run())
+
+    # Summary
+    print(f"\n\n{'═' * 60}")
+    print(f"  Scan Complete")
+    print(f"{'═' * 60}")
+    print(f"  Names checked:  {final_progress.names_checked}")
+    print(f"  Buckets found:  {final_progress.buckets_found}")
+    print(f"  Open buckets:   {len(open_buckets)}")
+    print(f"  Files indexed:  {sum(r.file_count for r in open_buckets)}")
+
+    if open_buckets:
+        print(f"\n  Open Buckets:")
+        for b in open_buckets:
+            print(f"    🟢 {b.provider}://{b.name} — {b.file_count} files — {b.url}")
+
+    if db_store:
+        print(f"\n  ✓ Results saved to database")
+    print()
+
+
+if __name__ == "__main__":
+    main()
