@@ -4,8 +4,8 @@
 
 CloudScan uses **PostgreSQL** by default for both local and production. SQLite is only used when `DATABASE_URL` is set to a `sqlite:///` URL (e.g. in tests).
 
-- **Local**: Start Postgres (e.g. `docker compose up -d db` or a local install), set `DATABASE_URL=postgresql://cloudscan:cloudscan@localhost:5432/cloudscan`, then start the app. Migrations run automatically on startup (`alembic upgrade head`).
-- **Docker Compose**: The `db` service runs Postgres; the backend waits for it and runs migrations on start.
+- **Local**: You can keep `RUN_DB_MIGRATIONS_ON_STARTUP=true` for convenience.
+- **Production**: Set `RUN_DB_MIGRATIONS_ON_STARTUP=false` and run migrations as an explicit deploy step (`alembic upgrade head`).
 - **Manual**: Create a database, set `DATABASE_URL`, run `cd backend && alembic upgrade head`, then start the API.
 
 ## Environment URLs (Local vs Production)
@@ -36,6 +36,8 @@ cp .env.example .env
 #    - Set a strong SECRET_KEY
 #    - Set DEBUG=false
 #    - Adjust CORS_ORIGINS to your domain
+#    - Set RUN_DB_MIGRATIONS_ON_STARTUP=false
+#    - Set ENABLE_MONITOR_SCHEDULER=false on API containers
 
 # 3. Build and start
 docker compose up -d --build
@@ -91,6 +93,7 @@ pip install -r requirements.txt
 
 # Initialize
 cd ..
+cd backend && alembic upgrade head && cd ..
 python -m backend.app.seed
 
 # Run with Gunicorn (production WSGI)
@@ -102,6 +105,16 @@ gunicorn backend.app.main:app \
     --keep-alive 65 \
     --access-logfile /var/log/cloudscan/access.log \
     --error-logfile /var/log/cloudscan/error.log
+```
+
+### Dedicated Monitor Worker
+
+Run scheduler in a dedicated process (not in the API process):
+
+```bash
+export ENABLE_MONITOR_SCHEDULER=true
+export RUN_DB_MIGRATIONS_ON_STARTUP=false
+python -m backend.app.workers.monitor_scheduler
 ```
 
 ### Systemd Service
@@ -132,9 +145,36 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+Create `/etc/systemd/system/cloudscan-monitor.service`:
+
+```ini
+[Unit]
+Description=CloudScan Monitor Scheduler
+After=network.target
+
+[Service]
+Type=simple
+User=cloudscan
+Group=cloudscan
+WorkingDirectory=/opt/cloudscan
+Environment=PATH=/opt/cloudscan/backend/venv/bin:/usr/bin
+Environment=PYTHONPATH=/opt/cloudscan
+EnvironmentFile=/opt/cloudscan/.env
+Environment=ENABLE_MONITOR_SCHEDULER=true
+Environment=RUN_DB_MIGRATIONS_ON_STARTUP=false
+ExecStart=/opt/cloudscan/backend/venv/bin/python -m backend.app.workers.monitor_scheduler
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ```bash
 sudo systemctl enable cloudscan-api
 sudo systemctl start cloudscan-api
+sudo systemctl enable cloudscan-monitor
+sudo systemctl start cloudscan-monitor
 ```
 
 ### Frontend

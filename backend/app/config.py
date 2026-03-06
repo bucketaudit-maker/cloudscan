@@ -56,6 +56,9 @@ class Settings:
     SCANNER_TIMEOUT: int = field(default_factory=lambda: _env_int("SCANNER_TIMEOUT", 10))
     SCANNER_USER_AGENT: str = field(default_factory=lambda: _env("SCANNER_USER_AGENT", "CloudScan/1.0 (Security Research)"))
     SCANNER_MAX_FILES: int = field(default_factory=lambda: _env_int("SCANNER_MAX_FILES_PER_BUCKET", 100000))
+    RUN_DB_MIGRATIONS_ON_STARTUP: bool = field(default_factory=lambda: _env_bool("RUN_DB_MIGRATIONS_ON_STARTUP", True))
+    ENABLE_MONITOR_SCHEDULER: bool = field(default_factory=lambda: _env_bool("ENABLE_MONITOR_SCHEDULER", False))
+    MONITOR_SCHEDULER_INTERVAL_SECONDS: int = field(default_factory=lambda: _env_int("MONITOR_SCHEDULER_INTERVAL_SECONDS", 300))
 
     # API
     API_HOST: str = field(default_factory=lambda: _env("API_HOST", "0.0.0.0"))

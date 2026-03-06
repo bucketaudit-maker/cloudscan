@@ -36,16 +36,26 @@ def create_app() -> Flask:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Initialize database
-    init_db()
+    # Initialize database only when explicitly enabled.
+    if settings.RUN_DB_MIGRATIONS_ON_STARTUP:
+        init_db()
+    else:
+        logging.getLogger(__name__).info("Skipping DB migration on API startup (RUN_DB_MIGRATIONS_ON_STARTUP=false)")
     logging.getLogger(__name__).info(f"CloudScan API starting (env={settings.APP_ENV})")
 
     # Register blueprints
     app.register_blueprint(api)
 
-    # Start monitoring scheduler
-    from backend.app.api.routes import monitor_service
-    monitor_service.start_scheduler(check_interval_seconds=300)
+    # Start monitoring scheduler only in scheduler role, not in every API worker.
+    if settings.ENABLE_MONITOR_SCHEDULER:
+        from backend.app.api.routes import monitor_service
+        monitor_service.start_scheduler(check_interval_seconds=settings.MONITOR_SCHEDULER_INTERVAL_SECONDS)
+        logging.getLogger(__name__).info(
+            "Monitor scheduler enabled in API process (interval=%ss)",
+            settings.MONITOR_SCHEDULER_INTERVAL_SECONDS,
+        )
+    else:
+        logging.getLogger(__name__).info("Monitor scheduler disabled in API process (ENABLE_MONITOR_SCHEDULER=false)")
 
     # Health check at root
     @app.route("/")
