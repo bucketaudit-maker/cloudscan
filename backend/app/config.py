@@ -8,6 +8,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Production will reject this value for SECRET_KEY
+DEV_SECRET_KEY = "dev-secret-change-in-production"
+
 
 def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
@@ -30,11 +33,22 @@ def _env_list(key: str, default: str = "") -> list[str]:
 class Settings:
     # App
     APP_ENV: str = field(default_factory=lambda: _env("APP_ENV", "development"))
-    SECRET_KEY: str = field(default_factory=lambda: _env("SECRET_KEY", "dev-secret-change-in-production"))
+    SECRET_KEY: str = field(default_factory=lambda: _env("SECRET_KEY", DEV_SECRET_KEY))
     DEBUG: bool = field(default_factory=lambda: _env_bool("DEBUG", True))
 
-    # Database
-    DATABASE_URL: str = field(default_factory=lambda: _env("DATABASE_URL", f"sqlite:///{BASE_DIR / 'data' / 'cloudscan.db'}"))
+    def __post_init__(self) -> None:
+        """Enforce production security: require SECRET_KEY, force DEBUG=False, no wildcard CORS."""
+        if self.APP_ENV != "production":
+            return
+        if self.SECRET_KEY == DEV_SECRET_KEY or len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                "Production requires SECRET_KEY to be set to a secure random value "
+                "(at least 32 characters). Set SECRET_KEY in the environment."
+            )
+        self.DEBUG = False
+
+    # Database (PostgreSQL default for local and production; SQLite only for tests)
+    DATABASE_URL: str = field(default_factory=lambda: _env("DATABASE_URL", "postgresql://cloudscan:cloudscan@localhost:5432/cloudscan"))
     REDIS_URL: str = field(default_factory=lambda: _env("REDIS_URL", "redis://localhost:6379/0"))
 
     # Scanner
@@ -61,6 +75,10 @@ class Settings:
         return self.APP_ENV == "production"
 
     @property
+    def is_postgres(self) -> bool:
+        return self.DATABASE_URL.strip().lower().startswith("postgresql")
+
+    @property
     def db_path(self) -> str:
         """Extract SQLite path from DATABASE_URL."""
         if self.DATABASE_URL.startswith("sqlite:///"):
@@ -74,6 +92,15 @@ class Settings:
             "premium": self.RATE_LIMIT_PREMIUM,
             "enterprise": self.RATE_LIMIT_ENTERPRISE,
         }
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """CORS origins: in production never include '*'; in debug allow '*'."""
+        if self.is_production:
+            return [o for o in self.CORS_ORIGINS if o and o != "*"]
+        if self.DEBUG:
+            return self.CORS_ORIGINS + ["*"]
+        return self.CORS_ORIGINS
 
 
 settings = Settings()

@@ -2,7 +2,7 @@
  * CloudScan API Client with Server-Sent Events for real-time scan streaming.
  */
 
-const API_BASE = '/api/v1';
+import { API_BASE } from '../config';
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | undefined>;

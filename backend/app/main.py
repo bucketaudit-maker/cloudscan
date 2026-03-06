@@ -25,8 +25,8 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = settings.SECRET_KEY
 
-    # CORS
-    CORS(app, origins=settings.CORS_ORIGINS + ["*"] if settings.DEBUG else settings.CORS_ORIGINS)
+    # CORS: production never allows '*'; debug adds '*' for dev convenience
+    CORS(app, origins=settings.cors_origins)
 
     # Logging
     log_level = logging.DEBUG if settings.DEBUG else logging.INFO
@@ -42,6 +42,10 @@ def create_app() -> Flask:
 
     # Register blueprints
     app.register_blueprint(api)
+
+    # Start monitoring scheduler
+    from backend.app.api.routes import monitor_service
+    monitor_service.start_scheduler(check_interval_seconds=300)
 
     # Health check at root
     @app.route("/")
@@ -61,4 +65,5 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         debug=settings.DEBUG,
         threaded=True,
+        use_reloader=False,  # Reloader spawns child process — breaks SSE + scan threads
     )

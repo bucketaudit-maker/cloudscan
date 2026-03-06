@@ -9,14 +9,22 @@ import tempfile
 
 import pytest
 
-# Point DB to temp file
+# Isolate tests: use a temp SQLite DB (config reads DATABASE_URL)
 _tmp = tempfile.mktemp(suffix=".db")
-os.environ["CLOUDSCAN_DB"] = _tmp
+os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from backend.app.main import create_app
-from backend.app.models.database import init_db, get_db, BucketStore, FileStore, ScanJobStore
+from backend.app.models.database import (
+    init_db,
+    get_db,
+    BucketStore,
+    FileStore,
+    ScanJobStore,
+    WatchlistStore,
+    AlertStore,
+)
 from backend.app.utils.auth import hash_password, verify_password, create_token, decode_token
 
 
@@ -30,6 +38,34 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+def _auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+@pytest.fixture
+def auth_user(client):
+    """Register and return (token, user_id) for first user."""
+    r = client.post(
+        "/api/v1/auth/register",
+        json={"email": "user_a@test.com", "username": "usera", "password": "password123"},
+    )
+    assert r.status_code == 201
+    data = r.get_json()
+    return data["token"], data["user"]["id"]
+
+
+@pytest.fixture
+def auth_user_b(client):
+    """Register and return (token, user_id) for second user (for authz tests)."""
+    r = client.post(
+        "/api/v1/auth/register",
+        json={"email": "user_b@test.com", "username": "userb", "password": "password456"},
+    )
+    assert r.status_code == 201
+    data = r.get_json()
+    return data["token"], data["user"]["id"]
 
 
 class TestDatabase:
@@ -173,6 +209,258 @@ class TestAPI:
     def test_scan_requires_auth(self, client):
         r = client.post("/api/v1/scans", json={"keywords": ["test"]})
         assert r.status_code == 401
+
+
+# ═══════════════════════════════════════════════════════════════════
+# AUTHORIZATION (authz) — production security
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestAuthzMonitorRequiresAuth:
+    """Monitor endpoints require authentication (auth_required_strict)."""
+
+    def test_list_watchlists_unauthorized(self, client):
+        r = client.get("/api/v1/monitor/watchlists")
+        assert r.status_code == 401
+        assert "error" in r.get_json()
+
+    def test_create_watchlist_unauthorized(self, client):
+        r = client.post(
+            "/api/v1/monitor/watchlists",
+            json={"name": "Test", "keywords": ["kw"]},
+        )
+        assert r.status_code == 401
+
+    def test_dashboard_unauthorized(self, client):
+        r = client.get("/api/v1/monitor/dashboard")
+        assert r.status_code == 401
+
+    def test_list_alerts_unauthorized(self, client):
+        r = client.get("/api/v1/monitor/alerts")
+        assert r.status_code == 401
+
+
+class TestAuthzWatchlistOwnership:
+    """User B cannot access or mutate user A's watchlist (IDOR)."""
+
+    def test_get_watchlist_forbidden_when_other_user(self, client, auth_user, auth_user_b):
+        token_a, user_id_a = auth_user
+        _token_b, _user_id_b = auth_user_b
+        # User A creates a watchlist
+        r = client.post(
+            "/api/v1/monitor/watchlists",
+            headers=_auth_headers(token_a),
+            json={"name": "A's list", "keywords": ["secret"]},
+        )
+        assert r.status_code == 201
+        wl_id = r.get_json()["id"]
+        # User B tries to get it
+        r = client.get(
+            f"/api/v1/monitor/watchlists/{wl_id}",
+            headers=_auth_headers(_token_b),
+        )
+        assert r.status_code == 404
+        assert "error" in r.get_json()
+
+    def test_update_watchlist_forbidden_when_other_user(self, client, auth_user, auth_user_b):
+        token_a, _ = auth_user
+        token_b, _ = auth_user_b
+        r = client.post(
+            "/api/v1/monitor/watchlists",
+            headers=_auth_headers(token_a),
+            json={"name": "A's list", "keywords": ["x"]},
+        )
+        assert r.status_code == 201
+        wl_id = r.get_json()["id"]
+        r = client.put(
+            f"/api/v1/monitor/watchlists/{wl_id}",
+            headers=_auth_headers(token_b),
+            json={"name": "Hacked"},
+        )
+        assert r.status_code == 404
+
+    def test_delete_watchlist_forbidden_when_other_user(self, client, auth_user, auth_user_b):
+        token_a, _ = auth_user
+        token_b, _ = auth_user_b
+        r = client.post(
+            "/api/v1/monitor/watchlists",
+            headers=_auth_headers(token_a),
+            json={"name": "A's list", "keywords": ["x"]},
+        )
+        assert r.status_code == 201
+        wl_id = r.get_json()["id"]
+        r = client.delete(
+            f"/api/v1/monitor/watchlists/{wl_id}",
+            headers=_auth_headers(token_b),
+        )
+        assert r.status_code == 404
+
+    def test_trigger_scan_forbidden_when_other_user(self, client, auth_user, auth_user_b):
+        token_a, _ = auth_user
+        token_b, _ = auth_user_b
+        r = client.post(
+            "/api/v1/monitor/watchlists",
+            headers=_auth_headers(token_a),
+            json={"name": "A's list", "keywords": ["x"]},
+        )
+        assert r.status_code == 201
+        wl_id = r.get_json()["id"]
+        r = client.post(
+            f"/api/v1/monitor/watchlists/{wl_id}/scan",
+            headers=_auth_headers(token_b),
+        )
+        assert r.status_code == 404
+
+
+class TestAuthzAlertOwnership:
+    """User B cannot mark read or resolve user A's alert."""
+
+    def test_mark_alert_read_forbidden_when_other_user(self, client, auth_user, auth_user_b):
+        init_db()
+        token_a, user_id_a = auth_user
+        token_b, _ = auth_user_b
+        wl = WatchlistStore.create(user_id_a, "A's list", ["x"], [], [], 24)
+        alert = AlertStore.create(
+            wl["id"], user_id_a, "new_bucket", "medium",
+            "Test alert", "desc", None, None, None,
+        )
+        r = client.post(
+            f"/api/v1/monitor/alerts/{alert['id']}/read",
+            headers=_auth_headers(token_b),
+        )
+        assert r.status_code == 404
+
+    def test_resolve_alert_forbidden_when_other_user(self, client, auth_user, auth_user_b):
+        init_db()
+        token_a, user_id_a = auth_user
+        token_b, _ = auth_user_b
+        wl = WatchlistStore.create(user_id_a, "A's list", ["x"], [], [], 24)
+        alert = AlertStore.create(
+            wl["id"], user_id_a, "new_bucket", "high",
+            "Test", "", None, None, None,
+        )
+        r = client.post(
+            f"/api/v1/monitor/alerts/{alert['id']}/resolve",
+            headers=_auth_headers(token_b),
+        )
+        assert r.status_code == 404
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CRITICAL PATH — auth, monitor, scans for production confidence
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestCriticalPathAuth:
+    def test_me_with_valid_token(self, client, auth_user):
+        token, user = auth_user
+        r = client.get("/api/v1/auth/me", headers=_auth_headers(token))
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data["id"] == user
+        assert "email" in data and "username" in data
+
+    def test_me_without_token(self, client):
+        r = client.get("/api/v1/auth/me")
+        assert r.status_code == 401
+
+    def test_forgot_password_accepts_email(self, client):
+        r = client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "nobody@example.com"},
+        )
+        assert r.status_code == 200
+        data = r.get_json()
+        assert "message" in data
+
+    def test_reset_password_invalid_token(self, client):
+        r = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": "invalid-token", "password": "newpass123"},
+        )
+        assert r.status_code == 400
+        assert "error" in r.get_json()
+
+
+class TestCriticalPathWatchlist:
+    def test_create_list_get_delete(self, client, auth_user):
+        token, _ = auth_user
+        r = client.post(
+            "/api/v1/monitor/watchlists",
+            headers=_auth_headers(token),
+            json={"name": "My Watchlist", "keywords": ["company", "backup"]},
+        )
+        assert r.status_code == 201
+        data = r.get_json()
+        assert data["name"] == "My Watchlist"
+        wl_id = data["id"]
+        r = client.get(f"/api/v1/monitor/watchlists/{wl_id}", headers=_auth_headers(token))
+        assert r.status_code == 200
+        assert r.get_json()["name"] == "My Watchlist"
+        r = client.get("/api/v1/monitor/watchlists", headers=_auth_headers(token))
+        assert r.status_code == 200
+        assert any(w["id"] == wl_id for w in r.get_json()["items"])
+        r = client.delete(f"/api/v1/monitor/watchlists/{wl_id}", headers=_auth_headers(token))
+        assert r.status_code == 200
+        r = client.get("/api/v1/monitor/watchlists", headers=_auth_headers(token))
+        assert not any(w["id"] == wl_id for w in r.get_json()["items"])
+
+    def test_dashboard_returns_counts(self, client, auth_user):
+        token, _ = auth_user
+        r = client.get("/api/v1/monitor/dashboard", headers=_auth_headers(token))
+        assert r.status_code == 200
+        data = r.get_json()
+        assert "watchlists" in data
+        assert "unread_alerts" in data
+        assert "alerts_by_severity" in data
+
+
+class TestCriticalPathScans:
+    def test_create_scan_with_auth(self, client, auth_user):
+        token, _ = auth_user
+        r = client.post(
+            "/api/v1/scans",
+            headers=_auth_headers(token),
+            json={"keywords": ["test"], "companies": []},
+        )
+        assert r.status_code == 202
+        data = r.get_json()
+        assert "id" in data
+        job_id = data["id"]
+        r = client.get(f"/api/v1/scans/{job_id}", headers=_auth_headers(token))
+        assert r.status_code == 200
+        assert r.get_json()["status"] in ("pending", "running", "completed", "failed", "cancelled")
+
+
+class TestCriticalPathAlerts:
+    def test_mark_own_alert_read(self, client, auth_user):
+        init_db()
+        token, user_id = auth_user
+        wl = WatchlistStore.create(user_id, "W", ["x"], [], [], 24)
+        alert = AlertStore.create(
+            wl["id"], user_id, "new_bucket", "medium",
+            "My alert", "", None, None, None,
+        )
+        r = client.post(
+            f"/api/v1/monitor/alerts/{alert['id']}/read",
+            headers=_auth_headers(token),
+        )
+        assert r.status_code == 200
+        assert r.get_json().get("message") == "Marked read"
+
+    def test_resolve_own_alert(self, client, auth_user):
+        init_db()
+        token, user_id = auth_user
+        wl = WatchlistStore.create(user_id, "W", ["x"], [], [], 24)
+        alert = AlertStore.create(
+            wl["id"], user_id, "new_bucket", "low",
+            "Alert", "", None, None, None,
+        )
+        r = client.post(
+            f"/api/v1/monitor/alerts/{alert['id']}/resolve",
+            headers=_auth_headers(token),
+        )
+        assert r.status_code == 200
 
 
 def teardown_module():

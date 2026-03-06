@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from backend.app.config import settings
 from backend.app.models.database import init_db, get_db, BucketStore, FileStore
 from backend.app.utils.auth import hash_password, generate_api_key
 
@@ -26,13 +27,23 @@ def seed():
 
     # Create demo user
     with get_db() as db:
-        db.execute("""
-            INSERT OR IGNORE INTO users (email, username, password_hash, api_key, tier, created_at, queries_reset_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, ("demo@cloudscan.io", "demo", hash_password("demo1234"),
-              "cs_demo_key_for_testing_purposes_only", "premium",
-              datetime.utcnow().isoformat(),
-              (datetime.utcnow() + timedelta(days=1)).isoformat()))
+        if settings.is_postgres:
+            db.execute("""
+                INSERT INTO users (email, username, password_hash, api_key, tier, created_at, queries_reset_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+            """, ("demo@cloudscan.io", "demo", hash_password("demo1234"),
+                  "cs_demo_key_for_testing_purposes_only", "premium",
+                  datetime.utcnow().isoformat(),
+                  (datetime.utcnow() + timedelta(days=1)).isoformat()))
+        else:
+            db.execute("""
+                INSERT OR IGNORE INTO users (email, username, password_hash, api_key, tier, created_at, queries_reset_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, ("demo@cloudscan.io", "demo", hash_password("demo1234"),
+                  "cs_demo_key_for_testing_purposes_only", "premium",
+                  datetime.utcnow().isoformat(),
+                  (datetime.utcnow() + timedelta(days=1)).isoformat()))
     print("  Created demo user: demo@cloudscan.io / demo1234")
 
     # Realistic buckets across providers

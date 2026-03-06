@@ -1,5 +1,19 @@
 # CloudScan — Deployment Guide
 
+## Database (PostgreSQL)
+
+CloudScan uses **PostgreSQL** by default for both local and production. SQLite is only used when `DATABASE_URL` is set to a `sqlite:///` URL (e.g. in tests).
+
+- **Local**: Start Postgres (e.g. `docker compose up -d db` or a local install), set `DATABASE_URL=postgresql://cloudscan:cloudscan@localhost:5432/cloudscan`, then start the app. Migrations run automatically on startup (`alembic upgrade head`).
+- **Docker Compose**: The `db` service runs Postgres; the backend waits for it and runs migrations on start.
+- **Manual**: Create a database, set `DATABASE_URL`, run `cd backend && alembic upgrade head`, then start the API.
+
+## Environment URLs (Local vs Production)
+
+- **Local**: No `VITE_API_URL` needed. The frontend uses relative `/api/v1`; Vite’s dev server proxies to `http://localhost:8000`. Backend `CORS_ORIGINS` can stay as `http://localhost:5173,http://localhost:3000`.
+- **Production (same host)**: If the UI and API are served from the same domain (e.g. nginx serves both), leave `VITE_API_URL` unset so the app keeps using relative `/api/v1`. Set `CORS_ORIGINS` to your frontend origin(s), e.g. `https://app.yourdomain.com`.
+- **Production (API on another host)**: Build the frontend with `VITE_API_URL=https://api.yourdomain.com` so all requests and SSE go to the API host. Set `CORS_ORIGINS` on the backend to include your frontend origin, e.g. `https://app.yourdomain.com`.
+
 ## Docker Compose (Recommended)
 
 The fastest way to deploy CloudScan in production.

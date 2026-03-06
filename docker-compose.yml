@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: cloudscan-db
+    environment:
+      POSTGRES_USER: cloudscan
+      POSTGRES_PASSWORD: cloudscan
+      POSTGRES_DB: cloudscan
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudscan -d cloudscan"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     container_name: cloudscan-api
@@ -9,11 +26,12 @@ services:
     environment:
       - APP_ENV=production
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production-please}
-      - DATABASE_URL=sqlite:////app/data/cloudscan.db
+      - DATABASE_URL=postgresql://cloudscan:cloudscan@db:5432/cloudscan
       - SCANNER_CONCURRENCY=50
       - CORS_ORIGINS=http://localhost,http://localhost:80,http://localhost:5173
-    volumes:
-      - db-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -32,4 +50,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  db-data:
+  pgdata:
