@@ -43,6 +43,11 @@ def create_app() -> Flask:
         logging.getLogger(__name__).info("Skipping DB migration on API startup (RUN_DB_MIGRATIONS_ON_STARTUP=false)")
     logging.getLogger(__name__).info(f"CloudScan API starting (env={settings.APP_ENV})")
 
+    # Initialize AI providers
+    if settings.AI_ENABLED:
+        from backend.app.services.providers.registry import init_default_provider
+        init_default_provider()
+
     # Register blueprints
     app.register_blueprint(api)
 

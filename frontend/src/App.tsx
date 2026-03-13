@@ -78,8 +78,9 @@ export default function App() {
   const [aiReport,setAiReport] = useState<any>(null); const [aiReportLoading,setAiReportLoading] = useState(false)
   const [suggestedKw,setSuggestedKw] = useState<string[]>([]); const [suggestLoading,setSuggestLoading] = useState(false)
   const [aiClassSummary,setAiClassSummary] = useState<any>(null); const [classifyLoading,setClassifyLoading] = useState(false)
+  const [aiProvider,setAiProvider] = useState(''); const [aiProviders,setAiProviders] = useState<any[]>([]); const [providerSwitching,setProviderSwitching] = useState(false)
 
-  useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d?.available) setAiAvail(true) }) }, [])
+  useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d){setAiAvail(d.available||false);setAiProvider(d.active_provider||'');setAiProviders(d.providers||[])} }) }, [])
   useEffect(() => { if(_token) apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }) }, [])
 
   const connectSSE = useCallback(() => {
@@ -145,6 +146,7 @@ export default function App() {
   const doGenReport = async() => { setAiReportLoading(true); const d=await apiFetch('/ai/report',{method:'POST'}); if(d)setAiReport(d); setAiReportLoading(false) }
   const doClassifyBucket = async(bid:number) => { setClassifyLoading(true); await apiFetch(`/ai/classify/${bid}`,{method:'POST'}); await apiFetch(`/ai/risk/${bid}`,{method:'POST'}); const b=await apiFetch(`/buckets/${bid}`); if(b)setBd(b); const cs=await apiFetch(`/ai/classifications?bucket_id=${bid}`); if(cs)setAiClassSummary(cs.summary); setClassifyLoading(false) }
   const doPrioritizeAlerts = async() => { await apiFetch('/ai/prioritize-alerts',{method:'POST'}); loadMonitor() }
+  const doSwitchProvider = async(name:string) => { setProviderSwitching(true); const r=await apiFetch('/ai/provider',{method:'POST',body:JSON.stringify({provider:name})}); if(r?.active_provider){setAiProvider(r.active_provider); const s=await apiFetch('/ai/status'); if(s){setAiAvail(s.available||false);setAiProviders(s.providers||[])}} setProviderSwitching(false) }
 
   // ═══════════════════════════════════════════════════════════════
   // ALL VIEWS INLINED — no component functions inside App()
@@ -340,13 +342,16 @@ export default function App() {
       {/* ─── AI INSIGHTS ─── */}
       {view==='ai-insights' && <div style={{padding:'80px 24px 24px',maxWidth:1100,margin:'0 auto'}}>
         <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>✦ AI Insights</h2>
-          <span style={{background:aiAvail?'#a855f715':'var(--bg-tertiary)',border:`1px solid ${aiAvail?'#a855f730':'var(--border-subtle)'}`,color:aiAvail?'#a855f7':'var(--text-muted)',padding:'2px 10px',borderRadius:6,fontSize:10,fontWeight:600}}>{aiAvail?'AI Active':'AI Unavailable'}</span></div>
+          <span style={{background:aiAvail?'#a855f715':'var(--bg-tertiary)',border:`1px solid ${aiAvail?'#a855f730':'var(--border-subtle)'}`,color:aiAvail?'#a855f7':'var(--text-muted)',padding:'2px 10px',borderRadius:6,fontSize:10,fontWeight:600}}>{aiAvail?'AI Active':'AI Unavailable'}</span>
+          {aiProviders.length>0&&<select value={aiProvider} onChange={e=>doSwitchProvider(e.target.value)} disabled={providerSwitching} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 8px',color:'var(--text-secondary)',fontSize:11,fontFamily:'var(--font-mono)',cursor:'pointer',opacity:providerSwitching?0.5:1}}>
+            {aiProviders.map((p:any)=><option key={p.name} value={p.name} disabled={!p.available}>{p.display_name}{!p.available?' (unavailable)':''}</option>)}
+          </select>}</div>
         <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:32}}>AI-powered analysis of your cloud storage security posture.</p>
 
         {/* AI Status Card */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:32}}>
           <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
-            <div style={{fontSize:24,marginBottom:4}}>✦</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'#a855f7'}}>{aiAvail?'ON':'OFF'}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>AI Engine</div></div>
+            <div style={{fontSize:24,marginBottom:4}}>✦</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'#a855f7'}}>{aiAvail?'ON':'OFF'}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{aiAvail&&aiProvider?aiProviders.find((p:any)=>p.name===aiProvider)?.display_name||'AI Engine':'AI Engine'}</div></div>
           <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
             <div style={{fontSize:24,marginBottom:4}}>🛡</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'var(--accent)'}}>{stats?.total_buckets||0}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Buckets Indexed</div></div>
           <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>

@@ -73,16 +73,41 @@ class Settings:
     # JWT
     JWT_EXPIRATION_HOURS: int = field(default_factory=lambda: _env_int("JWT_EXPIRATION_HOURS", 24))
 
-    # AI / Anthropic
+    # AI — Provider Selection
+    AI_PROVIDER: str = field(default_factory=lambda: _env("AI_PROVIDER", ""))
+    AI_ENABLED: bool = field(default_factory=lambda: _env_bool("AI_ENABLED", True))
+    AI_MAX_FILES_PER_BATCH: int = field(default_factory=lambda: _env_int("AI_MAX_FILES_PER_BATCH", 200))
+
+    # AI — Anthropic Claude
     ANTHROPIC_API_KEY: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
     AI_MODEL_FAST: str = field(default_factory=lambda: _env("AI_MODEL_FAST", "claude-haiku-4-5"))
     AI_MODEL_QUALITY: str = field(default_factory=lambda: _env("AI_MODEL_QUALITY", "claude-sonnet-4-6"))
-    AI_MAX_FILES_PER_BATCH: int = field(default_factory=lambda: _env_int("AI_MAX_FILES_PER_BATCH", 200))
-    AI_ENABLED: bool = field(default_factory=lambda: _env_bool("AI_ENABLED", True))
+
+    # AI — OpenAI GPT
+    OPENAI_API_KEY: str = field(default_factory=lambda: _env("OPENAI_API_KEY", ""))
+    OPENAI_MODEL_FAST: str = field(default_factory=lambda: _env("OPENAI_MODEL_FAST", "gpt-4o-mini"))
+    OPENAI_MODEL_QUALITY: str = field(default_factory=lambda: _env("OPENAI_MODEL_QUALITY", "gpt-4o"))
+
+    # AI — Google Gemini
+    GOOGLE_API_KEY: str = field(default_factory=lambda: _env("GOOGLE_API_KEY", ""))
+    GOOGLE_MODEL_FAST: str = field(default_factory=lambda: _env("GOOGLE_MODEL_FAST", "gemini-2.0-flash"))
+    GOOGLE_MODEL_QUALITY: str = field(default_factory=lambda: _env("GOOGLE_MODEL_QUALITY", "gemini-2.5-pro"))
+
+    # AI — Ollama (local)
+    OLLAMA_BASE_URL: str = field(default_factory=lambda: _env("OLLAMA_BASE_URL", ""))
+    OLLAMA_MODEL_FAST: str = field(default_factory=lambda: _env("OLLAMA_MODEL_FAST", "llama3.2"))
+    OLLAMA_MODEL_QUALITY: str = field(default_factory=lambda: _env("OLLAMA_MODEL_QUALITY", "llama3.1:70b"))
 
     @property
     def ai_available(self) -> bool:
-        return bool(self.ANTHROPIC_API_KEY) and self.AI_ENABLED
+        if not self.AI_ENABLED:
+            return False
+        return bool(
+            self.ANTHROPIC_API_KEY
+            or self.OPENAI_API_KEY
+            or self.GOOGLE_API_KEY
+            or self.OLLAMA_BASE_URL
+        )
 
     @property
     def is_production(self) -> bool:
