@@ -1,7 +1,8 @@
 """
-AI Service — Central Claude API integration for all AI features.
+AI Service — Multi-provider AI integration for all AI features.
 
-Graceful degradation: if ANTHROPIC_API_KEY is not set, all methods
+Supports: Anthropic Claude, OpenAI GPT, Google Gemini, Ollama (local).
+Graceful degradation: if no provider is configured/available, all methods
 fall back to rule-based behavior and return deterministic results.
 """
 import json
@@ -11,54 +12,31 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from backend.app.config import settings
+from backend.app.services.providers import get_provider, get_active_provider_name
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialized Anthropic client
-_client = None
-
-
-def _get_client():
-    """Lazy-init the Anthropic client. Returns None if no API key."""
-    global _client
-    if not settings.ANTHROPIC_API_KEY:
-        return None
-    if _client is None:
-        try:
-            from anthropic import Anthropic
-            _client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        except ImportError:
-            logger.error("anthropic package not installed — pip install anthropic")
-            return None
-    return _client
-
 
 def is_ai_available() -> bool:
-    """Check if AI features are available."""
-    return _get_client() is not None
+    """Check if AI features are available (any provider active)."""
+    provider = get_provider()
+    return provider is not None and provider.is_available()
 
 
-def _call_claude(prompt: str, system: str = "", model: str = None,
-                 max_tokens: int = 1024, temperature: float = 0.0) -> Optional[str]:
-    """Low-level Claude API call. Returns response text or None on failure."""
-    client = _get_client()
-    if not client:
+def _call_llm(prompt: str, system: str = "", tier: str = "fast",
+              max_tokens: int = 1024, temperature: float = 0.0) -> Optional[str]:
+    """Low-level LLM API call via the active provider.
+
+    Args:
+        tier: "fast" or "quality" — selects the appropriate model for the active provider.
+    Returns response text or None on failure.
+    """
+    provider = get_provider()
+    if not provider:
         return None
-    model = model or settings.AI_MODEL_FAST
-    try:
-        kwargs = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-        }
-        if system:
-            kwargs["system"] = system
-        response = client.messages.create(**kwargs)
-        return response.content[0].text
-    except Exception as e:
-        logger.error(f"Claude API error: {e}")
-        return None
+    model = provider.model_quality if tier == "quality" else provider.model_fast
+    return provider.call(prompt, system=system, model=model,
+                         max_tokens=max_tokens, temperature=temperature)
 
 
 def _extract_json(text: str):
@@ -151,8 +129,8 @@ def classify_files(files: list[dict], bucket_name: str = "",
         return []
 
     # Try AI classification first
-    client = _get_client()
-    if client and len(files) <= settings.AI_MAX_FILES_PER_BATCH:
+    provider = get_provider()
+    if provider and provider.is_available() and len(files) <= settings.AI_MAX_FILES_PER_BATCH:
         result = _ai_classify(files, bucket_name, provider)
         if result:
             return result
@@ -163,7 +141,7 @@ def classify_files(files: list[dict], bucket_name: str = "",
 
 def _ai_classify(files: list[dict], bucket_name: str,
                  provider: str) -> Optional[list[dict]]:
-    """Use Claude to classify files."""
+    """Use AI to classify files."""
     file_summaries = []
     for f in files[:settings.AI_MAX_FILES_PER_BATCH]:
         size = f.get("size_bytes", 0)
@@ -192,7 +170,7 @@ Return ONLY the JSON array, no other text."""
         "most sensitive applicable category. Return ONLY valid JSON."
     )
 
-    response = _call_claude(prompt, system=system, max_tokens=4096)
+    response = _call_llm(prompt, system=system, max_tokens=4096)
     parsed = _extract_json(response)
     if isinstance(parsed, list):
         # Validate and normalize
@@ -336,8 +314,7 @@ def parse_natural_language_query(query: str) -> dict:
 
     Returns dict with keys: q, ext, provider, min_size, max_size, sort, bucket
     """
-    client = _get_client()
-    if not client:
+    if not is_ai_available():
         return {"q": query}
 
     prompt = f"""Convert this natural language search query into structured parameters for a cloud file search engine.
@@ -360,7 +337,7 @@ Return ONLY a JSON object with the applicable parameters. Omit parameters that a
         "search parameters. Return ONLY valid JSON, no explanation."
     )
 
-    response = _call_claude(prompt, system=system, max_tokens=256)
+    response = _call_llm(prompt, system=system, max_tokens=256)
     parsed = _extract_json(response)
     if isinstance(parsed, dict) and parsed.get("q"):
         return parsed
@@ -376,8 +353,7 @@ def generate_security_report(scan_data: dict) -> dict:
 
     Returns {"report": str (markdown), "generated_at": str, "model": str}
     """
-    client = _get_client()
-    if not client:
+    if not is_ai_available():
         return _generate_rule_based_report(scan_data)
 
     summary = _build_report_context(scan_data)
@@ -409,17 +385,21 @@ Use markdown formatting. Be specific with numbers from the data provided."""
         "Be precise, professional, and actionable. Use the data provided — do not invent numbers."
     )
 
-    response = _call_claude(
+    response = _call_llm(
         prompt, system=system,
-        model=settings.AI_MODEL_QUALITY,
+        tier="quality",
         max_tokens=4096,
         temperature=0.3,
     )
 
+    provider = get_provider()
+    model_name = provider.model_quality if provider else "unknown"
+    provider_name = get_active_provider_name() or "unknown"
+
     return {
         "report": response or "Report generation failed. AI service unavailable.",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "model": settings.AI_MODEL_QUALITY,
+        "model": f"{provider_name}/{model_name}",
     }
 
 
@@ -509,8 +489,7 @@ Risk scoring has been applied to all discovered buckets based on access level, f
 
 def suggest_keywords(company: str) -> list[str]:
     """Given a company name or domain, suggest likely bucket naming patterns."""
-    client = _get_client()
-    if not client:
+    if not is_ai_available():
         return _rule_based_keywords(company)
 
     prompt = f"""Given the company or organization "{company}", generate likely cloud storage bucket naming patterns that organizations commonly use.
@@ -530,7 +509,7 @@ Return ONLY the JSON array, no other text."""
         "for security scanning. Return ONLY a JSON array of strings."
     )
 
-    response = _call_claude(prompt, system=system, max_tokens=1024)
+    response = _call_llm(prompt, system=system, max_tokens=1024)
     parsed = _extract_json(response)
     if isinstance(parsed, list):
         valid = [n for n in parsed if isinstance(n, str) and re.match(r'^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$', n)]
@@ -593,8 +572,8 @@ def prioritize_alerts(alerts: list[dict], context: dict = None) -> list[dict]:
     if not alerts:
         return []
 
-    client = _get_client()
-    if client and len(alerts) <= 50:
+    provider = get_provider()
+    if provider and provider.is_available() and len(alerts) <= 50:
         result = _ai_prioritize(alerts, context)
         if result:
             return result
@@ -603,7 +582,7 @@ def prioritize_alerts(alerts: list[dict], context: dict = None) -> list[dict]:
 
 
 def _ai_prioritize(alerts: list[dict], context: dict = None) -> Optional[list[dict]]:
-    """Use Claude to score alert priority."""
+    """Use AI to score alert priority."""
     alert_summaries = []
     for a in alerts[:50]:
         alert_summaries.append(
@@ -629,7 +608,7 @@ Return ONLY the JSON array."""
 
     system = "You are a security analyst triaging alerts. Score by actual risk. Return ONLY valid JSON."
 
-    response = _call_claude(prompt, system=system, max_tokens=2048)
+    response = _call_llm(prompt, system=system, max_tokens=2048)
     parsed = _extract_json(response)
     if isinstance(parsed, list):
         score_map = {}

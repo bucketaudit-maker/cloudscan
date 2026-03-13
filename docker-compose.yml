@@ -29,6 +29,11 @@ services:
       - DATABASE_URL=postgresql://cloudscan:cloudscan@db:5432/cloudscan
       - SCANNER_CONCURRENCY=50
       - CORS_ORIGINS=http://localhost,http://localhost:80,http://localhost:5173
+      - AI_PROVIDER=${AI_PROVIDER:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - RUN_DB_MIGRATIONS_ON_STARTUP=false
       - ENABLE_MONITOR_SCHEDULER=false
     depends_on:
@@ -49,6 +54,11 @@ services:
       - APP_ENV=production
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production-please}
       - DATABASE_URL=postgresql://cloudscan:cloudscan@db:5432/cloudscan
+      - AI_PROVIDER=${AI_PROVIDER:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - RUN_DB_MIGRATIONS_ON_STARTUP=false
       - ENABLE_MONITOR_SCHEDULER=true
       - MONITOR_SCHEDULER_INTERVAL_SECONDS=300

@@ -599,16 +599,50 @@ def monitor_dashboard():
 
 @api.route("/ai/status")
 def ai_status():
-    """Check if AI features are available."""
+    """Check AI provider status and available providers."""
     from backend.app.services.ai_service import is_ai_available
+    from backend.app.services.providers import (
+        list_providers as list_ai_providers,
+        get_active_provider_name,
+        get_provider,
+    )
+
+    active = get_provider()
     return jsonify({
         "available": is_ai_available(),
-        "model_fast": settings.AI_MODEL_FAST if settings.ai_available else None,
-        "model_quality": settings.AI_MODEL_QUALITY if settings.ai_available else None,
+        "active_provider": get_active_provider_name() or None,
+        "provider_display_name": active.display_name if active else None,
+        "model_fast": active.model_fast if active else None,
+        "model_quality": active.model_quality if active else None,
+        "providers": list_ai_providers(),
         "features": [
             "classify", "risk_score", "nl_search",
             "report", "suggest_keywords", "prioritize_alerts",
         ],
+    })
+
+
+@api.route("/ai/provider", methods=["POST"])
+@auth_required
+def ai_set_provider():
+    """Switch the active AI provider at runtime."""
+    from backend.app.services.providers import set_provider, get_active_provider_name, get_provider
+
+    data = request.get_json(silent=True) or {}
+    provider_name = data.get("provider", "").strip().lower()
+
+    if not provider_name:
+        return jsonify({"error": "Provider name required"}), 400
+
+    if not set_provider(provider_name):
+        return jsonify({"error": f"Provider '{provider_name}' is not configured or not available"}), 400
+
+    active = get_provider()
+    return jsonify({
+        "message": f"Switched to {active.display_name}",
+        "active_provider": get_active_provider_name(),
+        "model_fast": active.model_fast,
+        "model_quality": active.model_quality,
     })
 
 
