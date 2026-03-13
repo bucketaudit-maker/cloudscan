@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS buckets (
     last_status_check TEXT,
     scan_time_ms    INTEGER DEFAULT 0,
     metadata        TEXT,
+    risk_score      INTEGER DEFAULT NULL,
+    risk_level      TEXT DEFAULT NULL,
     UNIQUE(provider_id, name, region)
 );
 
@@ -68,6 +70,8 @@ CREATE TABLE IF NOT EXISTS files (
     url             TEXT NOT NULL,
     indexed_at      TEXT NOT NULL DEFAULT (datetime('now')),
     metadata        TEXT,
+    ai_classification TEXT DEFAULT NULL,
+    ai_confidence   REAL DEFAULT NULL,
     UNIQUE(bucket_id, filepath)
 );
 
@@ -172,6 +176,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     is_resolved     BOOLEAN DEFAULT 0,
     resolved_at     TEXT,
     metadata        TEXT,
+    ai_priority_score INTEGER DEFAULT NULL,
     created_at      TEXT DEFAULT (datetime('now'))
 );
 
@@ -236,6 +241,12 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_status ON scan_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_api_log_user ON api_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_log_created ON api_log(created_at);
+
+-- AI feature indexes
+CREATE INDEX IF NOT EXISTS idx_files_ai_classification ON files(ai_classification);
+CREATE INDEX IF NOT EXISTS idx_buckets_risk_score ON buckets(risk_score);
+CREATE INDEX IF NOT EXISTS idx_buckets_risk_level ON buckets(risk_level);
+CREATE INDEX IF NOT EXISTS idx_alerts_ai_priority ON alerts(ai_priority_score);
 """
 
 SEED_PROVIDERS = [
@@ -374,6 +385,14 @@ class BucketStore:
             return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
 
     @staticmethod
+    def update_risk(bucket_id: int, risk_score: int, risk_level: str):
+        with get_db() as db:
+            db.execute(
+                "UPDATE buckets SET risk_score=%s, risk_level=%s WHERE id=%s",
+                (risk_score, risk_level, bucket_id),
+            )
+
+    @staticmethod
     def update_counts(bucket_id: int):
         with get_db() as db:
             r = db.execute(
@@ -499,6 +518,33 @@ class FileStore:
                 "per_page": per_page,
                 "query": query,
             }
+
+    @staticmethod
+    def update_classifications(bucket_id: int, classifications: list[dict]):
+        """Update AI classifications for files in a bucket."""
+        with get_db() as db:
+            for c in classifications:
+                db.execute(
+                    "UPDATE files SET ai_classification=%s, ai_confidence=%s "
+                    "WHERE bucket_id=%s AND filepath=%s",
+                    (c.get("classification", "generic"),
+                     c.get("confidence", 0.5),
+                     bucket_id, c["filepath"]),
+                )
+
+    @staticmethod
+    def get_classification_summary(bucket_id: int = None) -> dict:
+        """Get classification counts, optionally filtered by bucket."""
+        with get_db() as db:
+            q = ("SELECT ai_classification, COUNT(*) as count FROM files "
+                 "WHERE ai_classification IS NOT NULL")
+            params = []
+            if bucket_id:
+                q += " AND bucket_id=%s"
+                params.append(bucket_id)
+            q += " GROUP BY ai_classification ORDER BY count DESC"
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {r["ai_classification"]: r["count"] for r in rows}
 
     @staticmethod
     def get_stats() -> dict:

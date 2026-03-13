@@ -128,6 +128,19 @@ class ScanService:
                 if result.status == "open" and result.files:
                     count = FileStore.insert_batch(bucket["id"], result.files)
                     logger.info(f"[OPEN] {result.provider}://{result.name} — {count} files")
+                    # AI: classify files and score bucket risk
+                    try:
+                        from backend.app.services.ai_service import classify_files, score_bucket_risk
+                        classifications = classify_files(
+                            result.files, result.name, result.provider)
+                        if classifications:
+                            FileStore.update_classifications(bucket["id"], classifications)
+                        risk = score_bucket_risk(
+                            bucket, result.files, classifications or [])
+                        BucketStore.update_risk(
+                            bucket["id"], risk["risk_score"], risk["risk_level"])
+                    except Exception as e:
+                        logger.warning(f"AI processing failed for {result.name}: {e}")
                 self._emit("bucket_found", {
                     "job_id": job_id,
                     "bucket": {

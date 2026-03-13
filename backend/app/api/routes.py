@@ -594,6 +594,184 @@ def monitor_dashboard():
 
 
 # ═══════════════════════════════════════════════════════════════════
+# AI FEATURES
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/ai/status")
+def ai_status():
+    """Check if AI features are available."""
+    from backend.app.services.ai_service import is_ai_available
+    return jsonify({
+        "available": is_ai_available(),
+        "model_fast": settings.AI_MODEL_FAST if settings.ai_available else None,
+        "model_quality": settings.AI_MODEL_QUALITY if settings.ai_available else None,
+        "features": [
+            "classify", "risk_score", "nl_search",
+            "report", "suggest_keywords", "prioritize_alerts",
+        ],
+    })
+
+
+@api.route("/ai/classify/<int:bucket_id>", methods=["POST"])
+@auth_required
+def ai_classify_bucket(bucket_id):
+    """Trigger AI classification for files in a bucket."""
+    from backend.app.services.ai_service import classify_files
+    bucket = BucketStore.get(bucket_id)
+    if not bucket:
+        return jsonify({"error": "Bucket not found"}), 404
+
+    with get_db() as db:
+        files = db.execute(
+            "SELECT * FROM files WHERE bucket_id=%s LIMIT %s",
+            (bucket_id, settings.AI_MAX_FILES_PER_BATCH),
+        ).fetchall()
+
+    if not files:
+        return jsonify({"classified": 0, "results": []})
+
+    classifications = classify_files(
+        [dict(f) for f in files],
+        bucket.get("name", ""),
+        bucket.get("provider_name", ""),
+    )
+    if classifications:
+        FileStore.update_classifications(bucket_id, classifications)
+    return jsonify({"classified": len(classifications), "results": classifications})
+
+
+@api.route("/ai/classifications")
+@auth_required
+def ai_get_classifications():
+    """Get classification summary, optionally filtered by bucket."""
+    bucket_id = request.args.get("bucket_id", type=int)
+    summary = FileStore.get_classification_summary(bucket_id)
+    return jsonify({"summary": summary})
+
+
+@api.route("/ai/risk/<int:bucket_id>", methods=["POST"])
+@auth_required
+def ai_calculate_risk(bucket_id):
+    """Calculate or recalculate risk score for a bucket."""
+    from backend.app.services.ai_service import score_bucket_risk
+    bucket = BucketStore.get(bucket_id)
+    if not bucket:
+        return jsonify({"error": "Bucket not found"}), 404
+
+    summary = FileStore.get_classification_summary(bucket_id)
+    classifications = [{"classification": k} for k in summary.keys()]
+    risk = score_bucket_risk(bucket, classifications=classifications)
+    BucketStore.update_risk(bucket_id, risk["risk_score"], risk["risk_level"])
+    return jsonify(risk)
+
+
+@api.route("/ai/search", methods=["POST"])
+@auth_required
+@rate_limit
+def ai_search():
+    """Natural language search: AI parses query intent, then runs structured search."""
+    from backend.app.services.ai_service import parse_natural_language_query
+    data = request.get_json(silent=True) or {}
+    query = data.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "Query required"}), 400
+
+    start = time.monotonic()
+    params = parse_natural_language_query(query)
+
+    ext_str = params.get("ext", "")
+    extensions = [e.strip() for e in ext_str.split(",") if e.strip()] if ext_str else None
+
+    results = FileStore.search(
+        query=params.get("q", ""),
+        extensions=extensions,
+        min_size=params.get("min_size"),
+        max_size=params.get("max_size"),
+        provider=params.get("provider"),
+        bucket_name=params.get("bucket"),
+        sort=params.get("sort", "relevance"),
+        page=data.get("page", 1),
+        per_page=min(data.get("per_page", 50), 200),
+    )
+    results["parsed_params"] = params
+    results["original_query"] = query
+    results["response_time_ms"] = int((time.monotonic() - start) * 1000)
+    return jsonify(results)
+
+
+@api.route("/ai/report", methods=["POST"])
+@auth_required_strict
+def ai_generate_report():
+    """Generate AI security report from scan data."""
+    from backend.app.services.ai_service import generate_security_report
+
+    stats_data = FileStore.get_stats()
+    classification_summary = FileStore.get_classification_summary()
+
+    with get_db() as db:
+        critical_buckets = db.execute("""
+            SELECT b.*, p.name as provider_name
+            FROM buckets b JOIN providers p ON b.provider_id=p.id
+            WHERE b.risk_level IN ('critical', 'high')
+            ORDER BY b.risk_score DESC LIMIT 20
+        """).fetchall()
+
+        risk_summary = {}
+        for row in db.execute(
+            "SELECT risk_level, COUNT(*) as cnt FROM buckets WHERE risk_level IS NOT NULL GROUP BY risk_level"
+        ).fetchall():
+            risk_summary[row["risk_level"]] = row["cnt"]
+
+    scan_data = {
+        "total_buckets": stats_data.get("total_buckets", 0),
+        "open_buckets": stats_data.get("open_buckets", 0),
+        "total_files": stats_data.get("total_files", 0),
+        "total_size_bytes": stats_data.get("total_size_bytes", 0),
+        "classification_summary": classification_summary,
+        "risk_summary": risk_summary,
+        "top_extensions": stats_data.get("top_extensions", []),
+        "critical_buckets": [dict(b) for b in critical_buckets],
+    }
+
+    report = generate_security_report(scan_data)
+    return jsonify(report)
+
+
+@api.route("/ai/suggest-keywords", methods=["POST"])
+@auth_required
+def ai_suggest_keywords():
+    """Generate smart bucket naming keywords for a company."""
+    from backend.app.services.ai_service import suggest_keywords
+    data = request.get_json(silent=True) or {}
+    company = data.get("company", "").strip()
+    if not company:
+        return jsonify({"error": "Company name required"}), 400
+
+    suggestions = suggest_keywords(company)
+    return jsonify({"company": company, "suggestions": suggestions})
+
+
+@api.route("/ai/prioritize-alerts", methods=["POST"])
+@auth_required_strict
+def ai_prioritize_alerts():
+    """Re-prioritize user alerts using AI."""
+    from backend.app.services.ai_service import prioritize_alerts
+    alerts_data = AlertStore.list_by_user(
+        g.user_id, unread_only=True, page=1, per_page=50)
+    items = alerts_data.get("items", [])
+
+    prioritized = prioritize_alerts(items)
+    with get_db() as db:
+        for a in prioritized:
+            if a.get("ai_priority_score") is not None:
+                db.execute(
+                    "UPDATE alerts SET ai_priority_score=%s WHERE id=%s",
+                    (a["ai_priority_score"], a["id"]),
+                )
+    return jsonify({"prioritized": len(prioritized), "alerts": prioritized})
+
+
+# ═══════════════════════════════════════════════════════════════════
 # ERROR HANDLERS
 # ═══════════════════════════════════════════════════════════════════
 

@@ -116,6 +116,32 @@ class ApiClient {
     return this.request(`/scans/${jobId}/cancel`, { method: 'POST' });
   }
 
+  // ── Monitoring ──
+  createWatchlist(data: any) { return this.request('/monitor/watchlists', { method: 'POST', body: JSON.stringify(data) }); }
+  listWatchlists() { return this.request('/monitor/watchlists'); }
+  deleteWatchlist(id: number) { return this.request(`/monitor/watchlists/${id}`, { method: 'DELETE' }); }
+  triggerWatchlistScan(id: number) { return this.request(`/monitor/watchlists/${id}/scan`, { method: 'POST' }); }
+  listAlerts(params: any = {}) { return this.request('/monitor/alerts', { params }); }
+  markAlertRead(id: number) { return this.request(`/monitor/alerts/${id}/read`, { method: 'POST' }); }
+  markAllAlertsRead() { return this.request('/monitor/alerts/read-all', { method: 'POST' }); }
+  getMonitorDashboard() { return this.request('/monitor/dashboard'); }
+
+  // ── AI Features ──
+  aiStatus() { return this.request('/ai/status'); }
+  aiClassify(bucketId: number) { return this.request(`/ai/classify/${bucketId}`, { method: 'POST' }); }
+  aiGetClassifications(bucketId?: number) {
+    return this.request('/ai/classifications', { params: bucketId ? { bucket_id: bucketId } : {} });
+  }
+  aiCalculateRisk(bucketId: number) { return this.request(`/ai/risk/${bucketId}`, { method: 'POST' }); }
+  aiSearch(query: string, page = 1, perPage = 50) {
+    return this.request('/ai/search', { method: 'POST', body: JSON.stringify({ query, page, per_page: perPage }) });
+  }
+  aiGenerateReport() { return this.request('/ai/report', { method: 'POST' }); }
+  aiSuggestKeywords(company: string) {
+    return this.request('/ai/suggest-keywords', { method: 'POST', body: JSON.stringify({ company }) });
+  }
+  aiPrioritizeAlerts() { return this.request('/ai/prioritize-alerts', { method: 'POST' }); }
+
   // ── SSE: Real-time scan events ──
   subscribeScanEvents(handlers: {
     onProgress?: (data: any) => void;
