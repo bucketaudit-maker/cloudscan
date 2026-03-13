@@ -177,6 +177,26 @@ class MonitoringService:
 
         WatchlistStore.mark_scanned(wl_id, watchlist.get("scan_interval_hours", 24))
 
+        # AI: prioritize newly created alerts
+        if results_summary["alerts_created"] > 0:
+            try:
+                from backend.app.services.ai_service import prioritize_alerts
+                with get_db() as db:
+                    recent_alerts = db.execute(
+                        "SELECT * FROM alerts WHERE watchlist_id=%s ORDER BY created_at DESC LIMIT 50",
+                        (wl_id,),
+                    ).fetchall()
+                prioritized = prioritize_alerts([dict(a) for a in recent_alerts])
+                with get_db() as db:
+                    for a in prioritized:
+                        if a.get("ai_priority_score") is not None:
+                            db.execute(
+                                "UPDATE alerts SET ai_priority_score=%s WHERE id=%s",
+                                (a["ai_priority_score"], a["id"]),
+                            )
+            except Exception as e:
+                logger.warning(f"[Monitor] AI alert prioritization failed: {e}")
+
         self._emit("monitor_complete", {
             "watchlist_id": wl_id,
             "summary": results_summary,

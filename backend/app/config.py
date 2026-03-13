@@ -73,6 +73,17 @@ class Settings:
     # JWT
     JWT_EXPIRATION_HOURS: int = field(default_factory=lambda: _env_int("JWT_EXPIRATION_HOURS", 24))
 
+    # AI / Anthropic
+    ANTHROPIC_API_KEY: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
+    AI_MODEL_FAST: str = field(default_factory=lambda: _env("AI_MODEL_FAST", "claude-haiku-4-5"))
+    AI_MODEL_QUALITY: str = field(default_factory=lambda: _env("AI_MODEL_QUALITY", "claude-sonnet-4-6"))
+    AI_MAX_FILES_PER_BATCH: int = field(default_factory=lambda: _env_int("AI_MAX_FILES_PER_BATCH", 200))
+    AI_ENABLED: bool = field(default_factory=lambda: _env_bool("AI_ENABLED", True))
+
+    @property
+    def ai_available(self) -> bool:
+        return bool(self.ANTHROPIC_API_KEY) and self.AI_ENABLED
+
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"

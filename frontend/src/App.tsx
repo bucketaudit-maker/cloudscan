@@ -28,6 +28,10 @@ const Badge = ({provider,big}:{provider:string,big?:boolean}) => { const c=PC[pr
 const SBadge = ({s}:{s:string}) => { const m:any={open:{bg:'#00e87b18',b:'#00e87b',c:'#00e87b',l:'OPEN'},closed:{bg:'#f0484818',b:'#f04848',c:'#f04848',l:'CLOSED'},partial:{bg:'#f5a62318',b:'#f5a623',c:'#f5a623',l:'PARTIAL'}}; const v=m[s]||m.closed; return <span style={{background:v.bg,border:`1px solid ${v.b}`,color:v.c,padding:'1px 8px',borderRadius:3,fontSize:10,fontWeight:700,fontFamily:'var(--font-mono)',letterSpacing:'1px'}}>{v.l}</span> }
 const SevBadge = ({s}:{s:string}) => { const m:any={critical:{bg:'#f04848',c:'#fff'},high:{bg:'#ff6b35',c:'#fff'},medium:{bg:'#f5a623',c:'#000'},low:{bg:'#4a9eff',c:'#fff'},info:{bg:'#4a5f73',c:'#fff'}}; const v=m[s]||m.info; return <span style={{background:v.bg,color:v.c,padding:'1px 6px',borderRadius:3,fontSize:9,fontWeight:700,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>{s}</span> }
 const Spin = () => <div style={{display:'flex',justifyContent:'center',padding:40}}><div style={{width:32,height:32,border:'3px solid var(--border-default)',borderTop:'3px solid var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>
+const CC:any = {credentials:{c:'#f04848',l:'CREDENTIALS'},pii:{c:'#ff6b35',l:'PII'},financial:{c:'#f5a623',l:'FINANCIAL'},medical:{c:'#e74c9e',l:'MEDICAL'},infrastructure:{c:'#4a9eff',l:'INFRA'},source_code:{c:'#9b59b6',l:'SOURCE'},database:{c:'#3498db',l:'DATABASE'},generic:{c:'#4a5f73',l:'GENERIC'}}
+const ClassBadge = ({c}:{c:string}) => { const v=CC[c]||CC.generic; return <span style={{background:v.c+'18',color:v.c,border:`1px solid ${v.c}40`,padding:'1px 6px',borderRadius:3,fontSize:9,fontWeight:700,letterSpacing:'0.5px'}}>{v.l}</span> }
+const RC:any = {critical:{bg:'#f04848',c:'#fff'},high:{bg:'#ff6b35',c:'#fff'},medium:{bg:'#f5a623',c:'#000'},low:{bg:'#4a9eff',c:'#fff'},info:{bg:'#4a5f73',c:'#fff'}}
+const RiskBadge = ({score,level}:{score:number,level:string}) => { const v=RC[level]||RC.info; return <span style={{background:v.bg,color:v.c,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700,whiteSpace:'nowrap' as const}}>{score}/100 {level.toUpperCase()}</span> }
 
 const LiveScanPanel = ({progress:p,events}:{progress:any,events:any[]}) => {
   if(!p && events.length===0) return null; p=p||{}
@@ -69,8 +73,13 @@ export default function App() {
   const [resetToken,setResetToken] = useState(''); const [authSuccess,setAuthSuccess] = useState('')
   const [watchlists,setWatchlists] = useState<any[]>([]); const [alerts,setAlerts] = useState<any>(null); const [monDash,setMonDash] = useState<any>(null)
   const [wlForm,setWlForm] = useState({name:'',keywords:'',companies:'',providers:[] as string[],interval:24})
+  // AI state
+  const [aiAvail,setAiAvail] = useState(false); const [nlMode,setNlMode] = useState(false); const [nlQuery,setNlQuery] = useState(''); const [nlParsed,setNlParsed] = useState<any>(null)
+  const [aiReport,setAiReport] = useState<any>(null); const [aiReportLoading,setAiReportLoading] = useState(false)
+  const [suggestedKw,setSuggestedKw] = useState<string[]>([]); const [suggestLoading,setSuggestLoading] = useState(false)
+  const [aiClassSummary,setAiClassSummary] = useState<any>(null); const [classifyLoading,setClassifyLoading] = useState(false)
 
-  useEffect(() => { apiFetch('/stats').then(d => setStats(d)) }, [])
+  useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d?.available) setAiAvail(true) }) }, [])
   useEffect(() => { if(_token) apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }) }, [])
 
   const connectSSE = useCallback(() => {
@@ -130,6 +139,13 @@ export default function App() {
       if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d))}},2000)}
   }
 
+  // ── AI helper functions ──
+  const doNlSearch = async(q:string) => { if(!q.trim())return; setSLoading(true); setView('search'); setNlQuery(q); setSq(q); const d=await apiFetch('/ai/search',{method:'POST',body:JSON.stringify({query:q})}); if(d){setNlParsed(d.parsed_params);setSr(d)}else{setSr({items:[],total:0})}; setSLoading(false) }
+  const doSuggestKw = async() => { const co=scanForm.companies.split(',').map(s=>s.trim()).filter(Boolean); if(!co.length)return; setSuggestLoading(true); const d=await apiFetch('/ai/suggest-keywords',{method:'POST',body:JSON.stringify({company:co[0]})}); if(d?.suggestions){setSuggestedKw(d.suggestions);const existing=scanForm.keywords?scanForm.keywords.split(',').map(s=>s.trim()).filter(Boolean):[]; const merged=[...new Set([...existing,...d.suggestions.slice(0,10)])]; setScanForm(f=>({...f,keywords:merged.join(', ')}))}; setSuggestLoading(false) }
+  const doGenReport = async() => { setAiReportLoading(true); const d=await apiFetch('/ai/report',{method:'POST'}); if(d)setAiReport(d); setAiReportLoading(false) }
+  const doClassifyBucket = async(bid:number) => { setClassifyLoading(true); await apiFetch(`/ai/classify/${bid}`,{method:'POST'}); await apiFetch(`/ai/risk/${bid}`,{method:'POST'}); const b=await apiFetch(`/buckets/${bid}`); if(b)setBd(b); const cs=await apiFetch(`/ai/classifications?bucket_id=${bid}`); if(cs)setAiClassSummary(cs.summary); setClassifyLoading(false) }
+  const doPrioritizeAlerts = async() => { await apiFetch('/ai/prioritize-alerts',{method:'POST'}); loadMonitor() }
+
   // ═══════════════════════════════════════════════════════════════
   // ALL VIEWS INLINED — no component functions inside App()
   // This prevents React from remounting inputs on every state change
@@ -142,8 +158,8 @@ export default function App() {
           <div style={{width:28,height:28,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:17,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:4}}>
-          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
-            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else setView(id as string)}}
+          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['ai-insights','AI','✦'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
+            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else setView(id as string)}}
               style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-tertiary)',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>
               <span style={{marginRight:5,fontSize:11}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:5}}>{monDash.unread_alerts}</span>:null}
@@ -230,20 +246,22 @@ export default function App() {
       {/* ─── SEARCH ─── */}
       {view==='search' && <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
         <LiveScanPanel progress={scanProgress} events={scanEvents}/>
-        <div style={{display:'flex',gap:8,marginBottom:16,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:'4px 4px 4px 16px',alignItems:'center'}}>
-          <span style={{color:'var(--text-muted)',fontSize:16}}>⌕</span>
-          <input ref={ref} value={sq} onChange={e=>setSq(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(sq)} placeholder="Search files..." style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:14,padding:'12px 0',fontFamily:'var(--font-mono)'}}/>
-          <button onClick={()=>doSearch(sq)} style={{background:'var(--accent)',border:'none',padding:'8px 20px',borderRadius:8,cursor:'pointer',color:'#000',fontWeight:700,fontSize:12}}>SEARCH</button></div>
+        <div style={{display:'flex',gap:8,marginBottom:16,background:'var(--bg-secondary)',border:`1px solid ${nlMode?'var(--ai-accent-dim)':'var(--border-default)'}`,borderRadius:12,padding:'4px 4px 4px 16px',alignItems:'center'}}>
+          <span style={{color:nlMode?'var(--ai-accent)':'var(--text-muted)',fontSize:16}}>{nlMode?'✦':'⌕'}</span>
+          <input ref={ref} value={sq} onChange={e=>setSq(e.target.value)} onKeyDown={e=>e.key==='Enter'&&(nlMode?doNlSearch(sq):doSearch(sq))} placeholder={nlMode?'Ask in plain English... e.g. "find database backups from tech companies"':'Search files...'} style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:14,padding:'12px 0',fontFamily:'var(--font-mono)'}}/>
+          {aiAvail && <button onClick={()=>setNlMode(!nlMode)} style={{background:nlMode?'var(--ai-accent)20':'var(--bg-primary)',border:`1px solid ${nlMode?'var(--ai-accent)':'var(--border-subtle)'}`,color:nlMode?'var(--ai-accent)':'var(--text-muted)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:700,whiteSpace:'nowrap' as const}}>AI</button>}
+          <button onClick={()=>nlMode?doNlSearch(sq):doSearch(sq)} style={{background:nlMode?'linear-gradient(135deg,#a855f7,#7c3aed)':'var(--accent)',border:'none',padding:'8px 20px',borderRadius:8,cursor:'pointer',color:nlMode?'#fff':'#000',fontWeight:700,fontSize:12}}>SEARCH</button></div>
+        {nlMode && nlParsed && <div style={{marginBottom:12,padding:'8px 14px',background:'var(--ai-accent-glow)',border:'1px solid #a855f730',borderRadius:8,fontSize:11,color:'var(--text-secondary)'}}>AI parsed: {Object.entries(nlParsed).map(([k,v])=><span key={k} style={{marginRight:10}}><span style={{color:'var(--ai-accent)'}}>{k}</span>=<span style={{color:'var(--text-primary)'}}>{String(v)}</span></span>)}</div>}
         <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
-          <select value={sf.provider} onChange={e=>{const f={...sf,provider:e.target.value,page:1};setSf(f);if(sq)doSearch(sq,f)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,color:'var(--text-secondary)',padding:'6px 12px',fontSize:12}}><option value="">All Providers</option>{Object.entries(PL).map(([k,v])=><option key={k} value={k}>{v as string}</option>)}</select>
-          <select value={sf.sort} onChange={e=>{const f={...sf,sort:e.target.value};setSf(f);if(sq)doSearch(sq,f)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,color:'var(--text-secondary)',padding:'6px 12px',fontSize:12}}><option value="relevance">Relevance</option><option value="size_desc">Largest</option><option value="size_asc">Smallest</option><option value="newest">Newest</option><option value="filename">Filename</option></select>
+          {!nlMode && <select value={sf.provider} onChange={e=>{const f={...sf,provider:e.target.value,page:1};setSf(f);if(sq)doSearch(sq,f)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,color:'var(--text-secondary)',padding:'6px 12px',fontSize:12}}><option value="">All Providers</option>{Object.entries(PL).map(([k,v])=><option key={k} value={k}>{v as string}</option>)}</select>}
+          {!nlMode && <select value={sf.sort} onChange={e=>{const f={...sf,sort:e.target.value};setSf(f);if(sq)doSearch(sq,f)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,color:'var(--text-secondary)',padding:'6px 12px',fontSize:12}}><option value="relevance">Relevance</option><option value="size_desc">Largest</option><option value="size_asc">Smallest</option><option value="newest">Newest</option><option value="filename">Filename</option></select>}
           {sr && <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:'auto'}}>{fnum(sr.total)} results · {sr.response_time_ms}ms</span>}</div>
         {sLoading ? <Spin/> : sr?.items?.length ? <div style={{display:'flex',flexDirection:'column',gap:1}}>
-          <div style={{display:'grid',gridTemplateColumns:'30px 1fr 95px 85px 75px 110px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span/><span>File</span><span>Provider</span><span>Size</span><span>Age</span><span>Bucket</span></div>
-          {sr.items.map((f:any,i:number)=><div key={f.id||i} style={{display:'grid',gridTemplateColumns:'30px 1fr 95px 85px 75px 110px',gap:12,padding:'10px 16px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
+          <div style={{display:'grid',gridTemplateColumns:'30px 1fr 95px 80px 85px 75px 110px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span/><span>File</span><span>Provider</span><span>Class</span><span>Size</span><span>Age</span><span>Bucket</span></div>
+          {sr.items.map((f:any,i:number)=><div key={f.id||i} style={{display:'grid',gridTemplateColumns:'30px 1fr 95px 80px 85px 75px 110px',gap:12,padding:'10px 16px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
             <span style={{fontSize:17,textAlign:'center'}}>{EI[f.extension]||'📄'}</span>
             <div style={{minWidth:0}}><div style={{fontSize:13,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}><a href={f.url} target="_blank" rel="noopener noreferrer" style={{color:'var(--accent-dim)'}}>{f.filename}</a></div><div style={{fontSize:11,color:'var(--text-muted)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{f.filepath}</div></div>
-            <Badge provider={f.provider_name}/><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fmt(f.size_bytes)}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>{ago(f.last_modified)}</span>
+            <Badge provider={f.provider_name}/>{f.ai_classification?<ClassBadge c={f.ai_classification}/>:<span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}<span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fmt(f.size_bytes)}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>{ago(f.last_modified)}</span>
             <span style={{fontSize:11,color:'var(--accent-dim)',cursor:'pointer',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}} onClick={()=>loadBd(f.bucket_id)}>{f.bucket_name}</span></div>)}
         </div> : sr ? <div style={{textAlign:'center',padding:60,color:'var(--text-muted)'}}>No results for "{sr.query}"</div> : <div style={{textAlign:'center',padding:60,color:'var(--text-muted)'}}>Enter a query to search exposed files</div>}
       </div>}
@@ -253,20 +271,22 @@ export default function App() {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20,flexWrap:'wrap',gap:12}}>
           <h2 style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>Public Buckets <span style={{fontSize:13,color:'var(--text-muted)',marginLeft:12}}>{fnum(buckets?.total||0)} indexed</span></h2>
           <div style={{display:'flex',gap:6}}>{['all','aws','azure','gcp','digitalocean','alibaba'].map(p=><button key={p} onClick={()=>loadBk(p==='all'?{}:{provider:p})} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'5px 12px',color:'var(--text-tertiary)',fontSize:11,cursor:'pointer'}}>{p==='all'?'All':PL[p]}</button>)}</div></div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 95px 85px 75px 85px 85px 75px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>Bucket</span><span>Provider</span><span>Region</span><span>Status</span><span>Files</span><span>Size</span><span>Scanned</span></div>
-        {buckets?.items?.map((b:any,i:number)=><div key={b.id} onClick={()=>loadBd(b.id)} style={{display:'grid',gridTemplateColumns:'1fr 95px 85px 75px 85px 85px 75px',gap:12,padding:'12px 16px',alignItems:'center',cursor:'pointer',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
-          <span style={{fontSize:14,color:'var(--accent-dim)',fontWeight:600}}>{b.name}</span><Badge provider={b.provider_name}/><span style={{fontSize:12,color:'var(--text-muted)'}}>{b.region||'—'}</span><SBadge s={b.status}/><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fnum(b.file_count)}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fmt(b.total_size_bytes)}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>{ago(b.last_scanned)}</span></div>)}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>Bucket</span><span>Provider</span><span>Region</span><span>Status</span><span>Risk</span><span>Files</span><span>Size</span><span>Scanned</span></div>
+        {buckets?.items?.map((b:any,i:number)=><div key={b.id} onClick={()=>loadBd(b.id)} style={{display:'grid',gridTemplateColumns:'1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'12px 16px',alignItems:'center',cursor:'pointer',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
+          <span style={{fontSize:14,color:'var(--accent-dim)',fontWeight:600}}>{b.name}</span><Badge provider={b.provider_name}/><span style={{fontSize:12,color:'var(--text-muted)'}}>{b.region||'—'}</span><SBadge s={b.status}/>{b.risk_score!=null?<RiskBadge score={b.risk_score} level={b.risk_level||'info'}/>:<span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}<span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fnum(b.file_count)}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fmt(b.total_size_bytes)}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>{ago(b.last_scanned)}</span></div>)}
       </div>}
 
       {/* ─── BUCKET DETAIL ─── */}
       {view==='bucket-detail' && (bd ? <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
         <button onClick={()=>setView('buckets')} style={{background:'none',border:'none',color:'var(--text-tertiary)',cursor:'pointer',fontSize:12,marginBottom:16,padding:0}}>← Back</button>
         <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
-          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,flexWrap:'wrap'}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>{bd.name}</h2><Badge provider={bd.provider_name} big/><SBadge s={bd.status}/></div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,flexWrap:'wrap'}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>{bd.name}</h2><Badge provider={bd.provider_name} big/><SBadge s={bd.status}/>{bd.risk_score!=null&&<RiskBadge score={bd.risk_score} level={bd.risk_level||'info'}/>}
+            {aiAvail&&<button onClick={()=>doClassifyBucket(bd.id)} disabled={classifyLoading} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'5px 14px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:11,fontWeight:600,opacity:classifyLoading?0.5:1}}>{classifyLoading?'Analyzing...':'✦ AI Analyze'}</button>}</div>
+          {aiClassSummary && Object.keys(aiClassSummary).length>0 && <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>{Object.entries(aiClassSummary).map(([cat,cnt]:any)=><div key={cat} style={{display:'flex',alignItems:'center',gap:4}}><ClassBadge c={cat}/><span style={{fontSize:11,color:'var(--text-muted)'}}>{cnt}</span></div>)}</div>}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:16}}>{[['URL',bd.url],['Region',bd.region||'Global'],['Files',fnum(bd.file_count)],['Size',fmt(bd.total_size_bytes)],['First Seen',bd.first_seen?.split('T')[0]],['Last Scanned',ago(bd.last_scanned)]].map(([l,v]:any)=><div key={l}><div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase' as const,marginBottom:4}}>{l}</div><div style={{fontSize:13,color:'var(--text-secondary)',wordBreak:'break-all' as const}}>{v||'—'}</div></div>)}</div></div>
         <h3 style={{fontSize:14,color:'var(--text-tertiary)',marginBottom:12}}>Contents ({fnum(bd.files?.total||0)} files)</h3>
-        {bd.files?.items?.map((f:any,i:number)=><div key={f.id||i} style={{display:'grid',gridTemplateColumns:'28px 1fr 85px 75px',gap:12,padding:'8px 12px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
-          <span style={{fontSize:16}}>{EI[f.extension]||'📄'}</span><a href={f.url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:'var(--accent-dim)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{f.filepath}</a><span style={{fontSize:11,color:'var(--text-muted)'}}>{fmt(f.size_bytes)}</span><span style={{fontSize:10,color:'var(--text-muted)'}}>{ago(f.last_modified)}</span></div>)}
+        {bd.files?.items?.map((f:any,i:number)=><div key={f.id||i} style={{display:'grid',gridTemplateColumns:'28px 1fr 80px 85px 75px',gap:12,padding:'8px 12px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
+          <span style={{fontSize:16}}>{EI[f.extension]||'📄'}</span><a href={f.url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:'var(--accent-dim)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{f.filepath}</a>{f.ai_classification?<ClassBadge c={f.ai_classification}/>:<span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}<span style={{fontSize:11,color:'var(--text-muted)'}}>{fmt(f.size_bytes)}</span><span style={{fontSize:10,color:'var(--text-muted)'}}>{ago(f.last_modified)}</span></div>)}
       </div> : <Spin/>)}
 
       {/* ─── SCANNER ─── */}
@@ -278,7 +298,9 @@ export default function App() {
           <div style={{marginBottom:20}}><label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:6}}>KEYWORDS (comma-separated)</label>
             <input value={scanForm.keywords} onChange={e=>setScanForm({...scanForm,keywords:e.target.value})} placeholder="backup, database, config, secret" style={IS}/></div>
           <div style={{marginBottom:20}}><label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:6}}>TARGET COMPANIES (comma-separated)</label>
-            <input value={scanForm.companies} onChange={e=>setScanForm({...scanForm,companies:e.target.value})} placeholder="acme-corp, globex, initech" style={IS}/></div>
+            <div style={{display:'flex',gap:8}}><input value={scanForm.companies} onChange={e=>setScanForm({...scanForm,companies:e.target.value})} placeholder="acme-corp, globex, initech" style={{...IS,flex:1}}/>
+            {aiAvail&&<button onClick={doSuggestKw} disabled={suggestLoading||!scanForm.companies.trim()} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'10px 16px',borderRadius:8,cursor:suggestLoading||!scanForm.companies.trim()?'not-allowed':'pointer',color:'#fff',fontSize:11,fontWeight:600,whiteSpace:'nowrap' as const,opacity:suggestLoading||!scanForm.companies.trim()?0.5:1}}>{suggestLoading?'...':'✦ Suggest'}</button>}</div>
+            {suggestedKw.length>0&&<div style={{marginTop:8,display:'flex',gap:4,flexWrap:'wrap'}}>{suggestedKw.map((kw:string)=><span key={kw} style={{background:'#a855f710',border:'1px solid #a855f730',color:'#a855f7',padding:'2px 8px',borderRadius:4,fontSize:10}}>{kw}</span>)}</div>}</div>
           <div style={{marginBottom:24}}><label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:8}}>PROVIDERS</label>
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{Object.entries(PL).map(([k,l])=>{const a=scanForm.providers.includes(k);return <button key={k} onClick={()=>setScanForm({...scanForm,providers:a?scanForm.providers.filter(p=>p!==k):[...scanForm.providers,k]})} style={{background:a?PC[k].bg+'20':'var(--bg-primary)',border:`1px solid ${a?PC[k].bg:'var(--border-subtle)'}`,borderRadius:8,padding:'6px 14px',cursor:'pointer',color:a?PC[k].bg:'var(--text-muted)',fontSize:12,fontWeight:a?600:400}}>{l as string}</button>})}</div></div>
           <button onClick={startScan} disabled={scanProgress?.phase==='scanning'} style={{width:'100%',background:scanProgress?.phase==='scanning'?'var(--bg-tertiary)':'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:scanProgress?.phase==='scanning'?'var(--text-tertiary)':'#000',fontWeight:700,fontSize:14,cursor:scanProgress?.phase==='scanning'?'not-allowed':'pointer',fontFamily:'var(--font-mono)'}}>{scanProgress?.phase==='scanning'?'⟳ SCAN IN PROGRESS...':'⟳ START DISCOVERY SCAN'}</button>
@@ -308,20 +330,71 @@ export default function App() {
             {watchlists.map((wl:any)=><div key={wl.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{wl.name}</div><div style={{fontSize:11,color:'var(--text-muted)'}}>Keywords: {(typeof wl.keywords==='string'?JSON.parse(wl.keywords):wl.keywords).join(', ')} | Every {wl.scan_interval_hours}h | Last: {ago(wl.last_scan_at)}</div></div>
               <div style={{display:'flex',gap:6}}><button onClick={()=>triggerWlScan(wl.id)} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:11}}>Scan Now</button><button onClick={()=>deleteWl(wl.id)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:11}}>Delete</button></div></div>)}</div>}
-          <h3 style={{fontSize:15,marginBottom:12}}>Alerts {alerts?.total?<span style={{fontSize:12,color:'var(--text-muted)'}}>({alerts.total})</span>:null}</h3>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}><h3 style={{fontSize:15,margin:0}}>Alerts {alerts?.total?<span style={{fontSize:12,color:'var(--text-muted)'}}>({alerts.total})</span>:null}</h3>{aiAvail&&alerts?.items?.length>0&&<button onClick={doPrioritizeAlerts} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'4px 12px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:10,fontWeight:600}}>✦ AI Prioritize</button>}</div>
           {!alerts?.items?.length ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:13}}>No alerts yet. Create a watchlist and run a scan.</div>
           : <div style={{display:'flex',flexDirection:'column',gap:4}}>{alerts.items.map((a:any)=><div key={a.id} onClick={()=>markAlertRead(a.id)} style={{background:a.is_read?'var(--bg-secondary)':'var(--bg-tertiary)',border:`1px solid ${a.is_read?'var(--border-default)':'var(--border-strong)'}`,borderRadius:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
             <SevBadge s={a.severity}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:a.is_read?400:600,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.title}</div><div style={{fontSize:11,color:'var(--text-muted)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.description}</div></div>
-            {a.provider_name&&<Badge provider={a.provider_name}/>}<span style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap' as const}}>{ago(a.created_at)}</span>{!a.is_read&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>}</div>)}</div>}
+            {a.ai_priority_score!=null&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>⚡{a.ai_priority_score}</span>}{a.provider_name&&<Badge provider={a.provider_name}/>}<span style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap' as const}}>{ago(a.created_at)}</span>{!a.is_read&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>}</div>)}</div>}
         </>}</div>}
+
+      {/* ─── AI INSIGHTS ─── */}
+      {view==='ai-insights' && <div style={{padding:'80px 24px 24px',maxWidth:1100,margin:'0 auto'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>✦ AI Insights</h2>
+          <span style={{background:aiAvail?'#a855f715':'var(--bg-tertiary)',border:`1px solid ${aiAvail?'#a855f730':'var(--border-subtle)'}`,color:aiAvail?'#a855f7':'var(--text-muted)',padding:'2px 10px',borderRadius:6,fontSize:10,fontWeight:600}}>{aiAvail?'AI Active':'AI Unavailable'}</span></div>
+        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:32}}>AI-powered analysis of your cloud storage security posture.</p>
+
+        {/* AI Status Card */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:32}}>
+          <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
+            <div style={{fontSize:24,marginBottom:4}}>✦</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'#a855f7'}}>{aiAvail?'ON':'OFF'}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>AI Engine</div></div>
+          <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
+            <div style={{fontSize:24,marginBottom:4}}>🛡</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'var(--accent)'}}>{stats?.total_buckets||0}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Buckets Indexed</div></div>
+          <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
+            <div style={{fontSize:24,marginBottom:4}}>⬡</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'var(--info)'}}>{stats?.total_files||0}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Files Scanned</div></div>
+        </div>
+
+        {/* NL Search */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+          <h3 style={{fontSize:15,marginBottom:12,display:'flex',alignItems:'center',gap:8}}>✦ Natural Language Search</h3>
+          <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>Search your indexed files using plain English queries.</p>
+          <div style={{display:'flex',gap:8}}><input value={nlQuery} onChange={e=>setNlQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doNlSearch(nlQuery)} placeholder="Find SQL backups in AWS that are larger than 1MB..." style={{...IS,flex:1,border:'1px solid #a855f730'}}/>
+            <button onClick={()=>doNlSearch(nlQuery)} disabled={!nlQuery.trim()||sLoading} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'10px 20px',borderRadius:8,cursor:!nlQuery.trim()?'not-allowed':'pointer',color:'#fff',fontSize:12,fontWeight:600,opacity:!nlQuery.trim()?0.5:1}}>{sLoading?'...':'Search'}</button></div>
+          {nlParsed&&<div style={{marginTop:12,display:'flex',gap:6,flexWrap:'wrap'}}>{Object.entries(nlParsed).filter(([,v])=>v).map(([k,v]:any)=><span key={k} style={{background:'#a855f710',border:'1px solid #a855f730',color:'#a855f7',padding:'2px 8px',borderRadius:4,fontSize:10}}>
+            {k}: {typeof v==='object'?JSON.stringify(v):String(v)}</span>)}</div>}
+        </div>
+
+        {/* Security Report */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><h3 style={{fontSize:15,margin:0,display:'flex',alignItems:'center',gap:8}}>✦ Security Report</h3>
+            <button onClick={doGenReport} disabled={aiReportLoading||!aiAvail} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'6px 16px',borderRadius:6,cursor:aiReportLoading||!aiAvail?'not-allowed':'pointer',color:'#fff',fontSize:11,fontWeight:600,opacity:aiReportLoading||!aiAvail?0.5:1}}>{aiReportLoading?'Generating...':'✦ Generate Report'}</button></div>
+          <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>Generate an AI-powered executive summary of your cloud storage security posture.</p>
+          {aiReport && <div style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:20}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)'}}>Security Report</span>
+              <span style={{fontSize:10,color:'var(--text-muted)'}}>Generated {aiReport.generated_at?new Date(aiReport.generated_at).toLocaleString():''}</span></div>
+            <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>Total Buckets: {aiReport.total_buckets} | Open Buckets: {aiReport.open_buckets} | High Risk: {aiReport.high_risk_count}</div>
+            <div style={{fontSize:13,color:'var(--text-secondary)',whiteSpace:'pre-wrap' as const,lineHeight:1.7}}>{aiReport.report}</div>
+          </div>}
+        </div>
+
+        {/* Classification Overview */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24}}>
+          <h3 style={{fontSize:15,marginBottom:12,display:'flex',alignItems:'center',gap:8}}>✦ File Classification Overview</h3>
+          <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>AI-assigned sensitivity categories across all indexed files.</p>
+          {aiClassSummary && Object.keys(aiClassSummary).length>0 ? <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:12}}>
+            {Object.entries(aiClassSummary).map(([cat,cnt]:any)=><div key={cat} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:16,display:'flex',alignItems:'center',gap:10}}>
+              <ClassBadge c={cat}/><span style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-display)',color:'var(--text-secondary)'}}>{cnt}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>files</span></div>)}
+          </div> : <div style={{textAlign:'center',padding:32,color:'var(--text-muted)',fontSize:12}}>No classified files yet. Use AI Analyze on a bucket to classify its files.</div>}
+        </div>
+      </div>}
 
       {/* ─── API DOCS ─── */}
       {view==='api-docs' && <div style={{padding:'80px 24px 24px',maxWidth:900,margin:'0 auto'}}>
         <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>REST API</h2>
         <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:32}}>Bearer token or API key auth. SSE for real-time events.</p>
-        {[{m:'GET',p:'/api/v1/files',d:'Full-text file search'},{m:'GET',p:'/api/v1/buckets',d:'List buckets'},{m:'GET',p:'/api/v1/stats',d:'Database stats'},{m:'GET',p:'/api/v1/events/scans',d:'SSE scan stream'},{m:'POST',p:'/api/v1/scans',d:'Start discovery scan'},{m:'POST',p:'/api/v1/auth/register',d:'Create account'},{m:'POST',p:'/api/v1/auth/login',d:'Login'},{m:'POST',p:'/api/v1/monitor/watchlists',d:'Create watchlist'},{m:'GET',p:'/api/v1/monitor/alerts',d:'List alerts'},{m:'GET',p:'/api/v1/monitor/dashboard',d:'Monitor dashboard'}].map(ep=><div key={ep.p+ep.m} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:16,marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
+        {[{m:'GET',p:'/api/v1/files',d:'Full-text file search'},{m:'GET',p:'/api/v1/buckets',d:'List buckets'},{m:'GET',p:'/api/v1/stats',d:'Database stats'},{m:'GET',p:'/api/v1/events/scans',d:'SSE scan stream'},{m:'POST',p:'/api/v1/scans',d:'Start discovery scan'},{m:'POST',p:'/api/v1/auth/register',d:'Create account'},{m:'POST',p:'/api/v1/auth/login',d:'Login'},{m:'POST',p:'/api/v1/monitor/watchlists',d:'Create watchlist'},{m:'GET',p:'/api/v1/monitor/alerts',d:'List alerts'},{m:'GET',p:'/api/v1/monitor/dashboard',d:'Monitor dashboard'},{m:'GET',p:'/api/v1/ai/status',d:'AI availability status',ai:true},{m:'POST',p:'/api/v1/ai/classify/:id',d:'Classify bucket files',ai:true},{m:'GET',p:'/api/v1/ai/classifications',d:'Classification summary',ai:true},{m:'POST',p:'/api/v1/ai/risk/:id',d:'Calculate risk score',ai:true},{m:'POST',p:'/api/v1/ai/search',d:'Natural language search',ai:true},{m:'POST',p:'/api/v1/ai/report',d:'Generate security report',ai:true},{m:'POST',p:'/api/v1/ai/suggest-keywords',d:'Smart keyword suggestions',ai:true},{m:'POST',p:'/api/v1/ai/prioritize-alerts',d:'Prioritize alerts with AI',ai:true}].map((ep:any)=><div key={ep.p+ep.m} style={{background:'var(--bg-secondary)',border:`1px solid ${ep.ai?'#a855f720':'var(--border-default)'}`,borderRadius:12,padding:16,marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
           <span style={{background:ep.m==='GET'?'var(--accent-bg)':'#ff990015',color:ep.m==='GET'?'var(--accent)':'var(--aws)',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,border:`1px solid ${ep.m==='GET'?'rgba(0,232,123,0.2)':'rgba(255,153,0,0.2)'}`}}>{ep.m}</span>
-          <span style={{fontSize:13,fontWeight:600}}>{ep.p}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{ep.d}</span></div>)}</div>}
+          <span style={{fontSize:13,fontWeight:600}}>{ep.p}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{ep.d}</span>{ep.ai&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:600}}>AI</span>}</div>)}</div>}
     </div>
   )
 }
