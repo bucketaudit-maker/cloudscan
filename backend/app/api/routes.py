@@ -14,6 +14,7 @@ from backend.app.config import settings
 from backend.app.models.database import (
     get_db, BucketStore, FileStore, ScanJobStore, init_db,
     WatchlistStore, AlertStore, MonitoredAssetStore, WebhookStore,
+    SavedSearchStore,
 )
 from backend.app.utils.auth import (
     auth_required, auth_required_strict, rate_limit,
@@ -342,6 +343,125 @@ def random_files():
             ORDER BY {order_by} LIMIT %s
         """, (count,)).fetchall()
     return jsonify({"items": [dict(r) for r in rows]})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SAVED SEARCHES
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/searches/saved", methods=["POST"])
+@auth_required_strict
+def create_saved_search():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    query_params = data.get("query_params", {})
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    result = SavedSearchStore.create(g.user_id, name, query_params)
+    return jsonify(result), 201
+
+
+@api.route("/searches/saved")
+@auth_required_strict
+def list_saved_searches():
+    return jsonify({"items": SavedSearchStore.list_by_user(g.user_id)})
+
+
+@api.route("/searches/saved/<int:search_id>", methods=["DELETE"])
+@auth_required_strict
+def delete_saved_search(search_id):
+    if not SavedSearchStore.delete(search_id, g.user_id):
+        return jsonify({"error": "Saved search not found"}), 404
+    return jsonify({"message": "Deleted"})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FILE PREVIEW
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/files/<int:file_id>/preview")
+@auth_required
+@rate_limit
+def file_preview(file_id):
+    """Fetch first 4KB of a publicly accessible file for preview."""
+    import html
+    import urllib.request
+    import urllib.error
+
+    TEXT_EXTS = {
+        "env", "txt", "log", "csv", "json", "xml", "yaml", "yml", "md",
+        "ini", "cfg", "conf", "sh", "py", "js", "ts", "css", "html", "sql",
+        "toml", "key", "pem", "htaccess", "gitignore", "dockerfile",
+        "tf", "tfvars", "properties", "htpasswd",
+    }
+
+    with get_db() as db:
+        row = db.execute(
+            """SELECT f.*, b.name as bucket_name, p.name as provider_name
+               FROM files f JOIN buckets b ON f.bucket_id=b.id
+               JOIN providers p ON b.provider_id=p.id
+               WHERE f.id=%s""",
+            (file_id,),
+        ).fetchone()
+
+    if not row:
+        return jsonify({"error": "File not found"}), 404
+
+    f = dict(row)
+    ext = (f.get("extension") or "").lower().lstrip(".")
+
+    if ext not in TEXT_EXTS:
+        return jsonify({
+            "file_id": file_id,
+            "preview_type": "binary",
+            "content": None,
+            "summary": f"Binary file ({ext.upper() or 'unknown'}, {f.get('size_bytes', 0):,} bytes)",
+            "size_bytes": f.get("size_bytes", 0),
+        })
+
+    url = f.get("url", "")
+    if not url:
+        return jsonify({"file_id": file_id, "preview_type": "error", "error": "No URL available"})
+
+    try:
+        req = urllib.request.Request(url, headers={"Range": "bytes=0-4095"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            raw = resp.read(4096)
+            try:
+                text = raw.decode("utf-8", errors="replace")
+            except Exception:
+                text = raw.decode("latin-1", errors="replace")
+            text = html.escape(text)
+            return jsonify({
+                "file_id": file_id,
+                "preview_type": "text",
+                "content": text,
+                "truncated": f.get("size_bytes", 0) > 4096,
+                "size_bytes": f.get("size_bytes", 0),
+            })
+    except Exception as e:
+        return jsonify({
+            "file_id": file_id,
+            "preview_type": "error",
+            "error": f"File not accessible: {str(e)[:100]}",
+        })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ANALYTICS
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/stats/timeline")
+@auth_required
+def stats_timeline():
+    days = min(request.args.get("days", 30, type=int), 365)
+    return jsonify(FileStore.get_timeline(days))
+
+
+@api.route("/stats/breakdown")
+@auth_required
+def stats_breakdown():
+    return jsonify(FileStore.get_breakdown())
 
 
 # ═══════════════════════════════════════════════════════════════════
