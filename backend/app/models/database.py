@@ -215,6 +215,16 @@ CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
 CREATE INDEX IF NOT EXISTS idx_monitored_assets_wl ON monitored_assets(watchlist_id);
 CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhook_configs(user_id);
 
+CREATE TABLE IF NOT EXISTS saved_searches (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    query_params    TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_searches_user ON saved_searches(user_id);
+
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         INTEGER NOT NULL REFERENCES users(id),
@@ -442,7 +452,7 @@ class FileStore:
     def search(query: str = "", extensions: list = None, exclude_extensions: list = None,
                min_size: int = None, max_size: int = None, provider: str = None,
                bucket_name: str = None, sort: str = "relevance",
-               page: int = 1, per_page: int = 50) -> dict:
+               page: int = 1, per_page: int = 50, regex: str = None) -> dict:
         import re
         with get_db() as db:
             base = """
@@ -454,7 +464,13 @@ class FileStore:
             """
             wheres, params = [], []
 
-            if query:
+            if regex:
+                if settings.is_postgres:
+                    wheres.append("f.filepath ~ %s")
+                else:
+                    wheres.append("f.filepath REGEXP %s")
+                params.append(regex)
+            elif query:
                 clean = re.sub(r'[^\w\s\-\*\.]', '', query)
                 if settings.is_postgres:
                     wheres.append("f.search_vector @@ plainto_tsquery('english', %s)")
@@ -570,6 +586,60 @@ class FileStore:
                 WHERE b.status='open' ORDER BY b.last_scanned DESC LIMIT 10
             """).fetchall()]
             return s
+
+    @staticmethod
+    def get_timeline(days: int = 30) -> dict:
+        with get_db() as db:
+            cutoff = f"-{days} days"
+            files_tl = [dict(r) for r in db.execute("""
+                SELECT date(indexed_at) as day, COUNT(*) as count
+                FROM files WHERE indexed_at >= datetime('now', %s)
+                GROUP BY date(indexed_at) ORDER BY day
+            """, (cutoff,)).fetchall()]
+            buckets_tl = [dict(r) for r in db.execute("""
+                SELECT date(first_seen) as day, COUNT(*) as count
+                FROM buckets WHERE first_seen >= datetime('now', %s)
+                GROUP BY date(first_seen) ORDER BY day
+            """, (cutoff,)).fetchall()]
+            return {
+                "files_timeline": files_tl,
+                "buckets_timeline": buckets_tl,
+                "days": days,
+            }
+
+    @staticmethod
+    def get_breakdown() -> dict:
+        with get_db() as db:
+            risk = [dict(r) for r in db.execute("""
+                SELECT risk_level, COUNT(*) as count FROM buckets
+                WHERE risk_level IS NOT NULL GROUP BY risk_level
+            """).fetchall()]
+            providers = [dict(r) for r in db.execute("""
+                SELECT p.name, p.display_name, COUNT(b.id) as bucket_count,
+                    COALESCE(SUM(b.file_count),0) as file_count
+                FROM providers p LEFT JOIN buckets b ON p.id=b.provider_id
+                GROUP BY p.id ORDER BY bucket_count DESC
+            """).fetchall()]
+            classifications = [dict(r) for r in db.execute("""
+                SELECT ai_classification, COUNT(*) as count FROM files
+                WHERE ai_classification IS NOT NULL
+                GROUP BY ai_classification ORDER BY count DESC
+            """).fetchall()]
+            statuses = [dict(r) for r in db.execute("""
+                SELECT status, COUNT(*) as count FROM buckets
+                GROUP BY status ORDER BY count DESC
+            """).fetchall()]
+            extensions = [dict(r) for r in db.execute("""
+                SELECT extension, COUNT(*) as count FROM files
+                WHERE extension != '' GROUP BY extension ORDER BY count DESC LIMIT 15
+            """).fetchall()]
+            return {
+                "risk_distribution": risk,
+                "provider_distribution": providers,
+                "classification_distribution": classifications,
+                "status_distribution": statuses,
+                "extension_distribution": extensions,
+            }
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -838,3 +908,138 @@ class MonitoredAssetStore:
                 ORDER BY ma.first_detected DESC
             """, (watchlist_id,)).fetchall()
             return [dict(r) for r in rows]
+
+
+class WebhookStore:
+    @staticmethod
+    def create(user_id: int, name: str, url: str, secret: str = None,
+               event_types: list = None) -> dict:
+        if event_types is None:
+            event_types = ["critical", "high"]
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO webhook_configs (user_id, name, url, secret, event_types) VALUES (%s, %s, %s, %s, %s)",
+                (user_id, name, url, secret, json.dumps(event_types)),
+            )
+            row = db.execute(
+                "SELECT * FROM webhook_configs WHERE id=%s", (db.lastrowid,)
+            ).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_by_user(user_id: int) -> list:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM webhook_configs WHERE user_id=%s ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def get(webhook_id: int, user_id: int) -> dict | None:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM webhook_configs WHERE id=%s AND user_id=%s",
+                (webhook_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def update(webhook_id: int, user_id: int, **kwargs) -> bool:
+        allowed = {"name", "url", "secret", "event_types", "is_active"}
+        updates, params = [], []
+        for k, v in kwargs.items():
+            if k in allowed and v is not None:
+                if k == "event_types":
+                    v = json.dumps(v)
+                updates.append(f"{k}=%s")
+                params.append(v)
+        if not updates:
+            return False
+        params.extend([webhook_id, user_id])
+        with get_db() as db:
+            db.execute(
+                f"UPDATE webhook_configs SET {','.join(updates)} WHERE id=%s AND user_id=%s",
+                tuple(params),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def delete(webhook_id: int, user_id: int) -> bool:
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM webhook_configs WHERE id=%s AND user_id=%s",
+                (webhook_id, user_id),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def get_active_for_user(user_id: int) -> list:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM webhook_configs WHERE user_id=%s AND is_active=1",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def increment_failure(webhook_id: int):
+        with get_db() as db:
+            db.execute(
+                "UPDATE webhook_configs SET failure_count=failure_count+1 WHERE id=%s",
+                (webhook_id,),
+            )
+            row = db.execute(
+                "SELECT failure_count FROM webhook_configs WHERE id=%s", (webhook_id,)
+            ).fetchone()
+            if row and row["failure_count"] >= 10:
+                db.execute(
+                    "UPDATE webhook_configs SET is_active=0 WHERE id=%s", (webhook_id,)
+                )
+
+    @staticmethod
+    def reset_failure(webhook_id: int):
+        with get_db() as db:
+            db.execute(
+                "UPDATE webhook_configs SET failure_count=0 WHERE id=%s", (webhook_id,)
+            )
+
+    @staticmethod
+    def mark_triggered(webhook_id: int):
+        with get_db() as db:
+            db.execute(
+                "UPDATE webhook_configs SET last_triggered=datetime('now') WHERE id=%s",
+                (webhook_id,),
+            )
+
+
+class SavedSearchStore:
+    @staticmethod
+    def create(user_id: int, name: str, query_params: dict) -> dict:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO saved_searches (user_id, name, query_params) VALUES (%s, %s, %s)",
+                (user_id, name, json.dumps(query_params)),
+            )
+            row = db.execute(
+                "SELECT * FROM saved_searches WHERE id=%s", (db.lastrowid,)
+            ).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_by_user(user_id: int) -> list:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM saved_searches WHERE user_id=%s ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def delete(search_id: int, user_id: int) -> bool:
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM saved_searches WHERE id=%s AND user_id=%s",
+                (search_id, user_id),
+            )
+            return db.rowcount > 0
