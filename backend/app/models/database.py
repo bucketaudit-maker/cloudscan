@@ -442,7 +442,7 @@ class FileStore:
     def search(query: str = "", extensions: list = None, exclude_extensions: list = None,
                min_size: int = None, max_size: int = None, provider: str = None,
                bucket_name: str = None, sort: str = "relevance",
-               page: int = 1, per_page: int = 50) -> dict:
+               page: int = 1, per_page: int = 50, regex: str = None) -> dict:
         import re
         with get_db() as db:
             base = """
@@ -454,7 +454,13 @@ class FileStore:
             """
             wheres, params = [], []
 
-            if query:
+            if regex:
+                if settings.is_postgres:
+                    wheres.append("f.filepath ~ %s")
+                else:
+                    wheres.append("f.filepath REGEXP %s")
+                params.append(regex)
+            elif query:
                 clean = re.sub(r'[^\w\s\-\*\.]', '', query)
                 if settings.is_postgres:
                     wheres.append("f.search_vector @@ plainto_tsquery('english', %s)")
@@ -838,3 +844,106 @@ class MonitoredAssetStore:
                 ORDER BY ma.first_detected DESC
             """, (watchlist_id,)).fetchall()
             return [dict(r) for r in rows]
+
+
+class WebhookStore:
+    @staticmethod
+    def create(user_id: int, name: str, url: str, secret: str = None,
+               event_types: list = None) -> dict:
+        if event_types is None:
+            event_types = ["critical", "high"]
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO webhook_configs (user_id, name, url, secret, event_types) VALUES (%s, %s, %s, %s, %s)",
+                (user_id, name, url, secret, json.dumps(event_types)),
+            )
+            row = db.execute(
+                "SELECT * FROM webhook_configs WHERE id=%s", (db.lastrowid,)
+            ).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_by_user(user_id: int) -> list:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM webhook_configs WHERE user_id=%s ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def get(webhook_id: int, user_id: int) -> dict | None:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM webhook_configs WHERE id=%s AND user_id=%s",
+                (webhook_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def update(webhook_id: int, user_id: int, **kwargs) -> bool:
+        allowed = {"name", "url", "secret", "event_types", "is_active"}
+        updates, params = [], []
+        for k, v in kwargs.items():
+            if k in allowed and v is not None:
+                if k == "event_types":
+                    v = json.dumps(v)
+                updates.append(f"{k}=%s")
+                params.append(v)
+        if not updates:
+            return False
+        params.extend([webhook_id, user_id])
+        with get_db() as db:
+            db.execute(
+                f"UPDATE webhook_configs SET {','.join(updates)} WHERE id=%s AND user_id=%s",
+                tuple(params),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def delete(webhook_id: int, user_id: int) -> bool:
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM webhook_configs WHERE id=%s AND user_id=%s",
+                (webhook_id, user_id),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def get_active_for_user(user_id: int) -> list:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM webhook_configs WHERE user_id=%s AND is_active=1",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def increment_failure(webhook_id: int):
+        with get_db() as db:
+            db.execute(
+                "UPDATE webhook_configs SET failure_count=failure_count+1 WHERE id=%s",
+                (webhook_id,),
+            )
+            row = db.execute(
+                "SELECT failure_count FROM webhook_configs WHERE id=%s", (webhook_id,)
+            ).fetchone()
+            if row and row["failure_count"] >= 10:
+                db.execute(
+                    "UPDATE webhook_configs SET is_active=0 WHERE id=%s", (webhook_id,)
+                )
+
+    @staticmethod
+    def reset_failure(webhook_id: int):
+        with get_db() as db:
+            db.execute(
+                "UPDATE webhook_configs SET failure_count=0 WHERE id=%s", (webhook_id,)
+            )
+
+    @staticmethod
+    def mark_triggered(webhook_id: int):
+        with get_db() as db:
+            db.execute(
+                "UPDATE webhook_configs SET last_triggered=datetime('now') WHERE id=%s",
+                (webhook_id,),
+            )

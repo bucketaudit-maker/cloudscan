@@ -13,7 +13,7 @@ from flask import Blueprint, request, jsonify, g, Response, stream_with_context
 from backend.app.config import settings
 from backend.app.models.database import (
     get_db, BucketStore, FileStore, ScanJobStore, init_db,
-    WatchlistStore, AlertStore, MonitoredAssetStore,
+    WatchlistStore, AlertStore, MonitoredAssetStore, WebhookStore,
 )
 from backend.app.utils.auth import (
     auth_required, auth_required_strict, rate_limit,
@@ -237,6 +237,8 @@ def reset_password():
 @auth_required
 @rate_limit
 def search_files():
+    import re as _re
+
     q = request.args.get("q", "").strip()
     ext = [e.strip() for e in request.args.get("ext", "").split(",") if e.strip()] or None
     excl = [e.strip() for e in request.args.get("exclude_ext", "").split(",") if e.strip()] or None
@@ -247,9 +249,16 @@ def search_files():
     per_page = min(request.args.get("per_page", 50, type=int), 200)
     min_size = request.args.get("min_size", type=int)
     max_size = request.args.get("max_size", type=int)
+    regex = request.args.get("regex", "").strip()
 
-    if not q and not ext and not provider:
-        return jsonify({"error": "At least one search parameter required (q, ext, or provider)"}), 400
+    if regex:
+        try:
+            _re.compile(regex)
+        except _re.error:
+            return jsonify({"error": "Invalid regex pattern"}), 400
+
+    if not q and not ext and not provider and not regex:
+        return jsonify({"error": "At least one search parameter required (q, ext, provider, or regex)"}), 400
 
     start = time.monotonic()
     results = FileStore.search(
@@ -257,9 +266,66 @@ def search_files():
         min_size=min_size, max_size=max_size,
         provider=provider, bucket_name=bucket,
         sort=sort, page=page, per_page=per_page,
+        regex=regex or None,
     )
     results["response_time_ms"] = int((time.monotonic() - start) * 1000)
     return jsonify(results)
+
+
+@api.route("/files/export")
+@auth_required
+@rate_limit
+def export_files():
+    """Export search results as CSV or JSON."""
+    import csv
+    import io
+    import re as _re
+
+    fmt = request.args.get("format", "csv").lower()
+    if fmt not in ("csv", "json"):
+        return jsonify({"error": "format must be csv or json"}), 400
+
+    q = request.args.get("q", "").strip()
+    ext = [e.strip() for e in request.args.get("ext", "").split(",") if e.strip()] or None
+    provider = request.args.get("provider")
+    regex = request.args.get("regex", "").strip()
+
+    if regex:
+        try:
+            _re.compile(regex)
+        except _re.error:
+            return jsonify({"error": "Invalid regex pattern"}), 400
+
+    if not q and not ext and not provider and not regex:
+        return jsonify({"error": "At least one search parameter required"}), 400
+
+    results = FileStore.search(
+        query=q, extensions=ext, provider=provider,
+        regex=regex or None, page=1, per_page=10000,
+    )
+    items = results.get("items", [])
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+
+    if fmt == "json":
+        return Response(
+            json.dumps(items, default=str),
+            mimetype="application/json",
+            headers={"Content-Disposition": f'attachment; filename="cloudscan-export-{timestamp}.json"'},
+        )
+
+    columns = ["filepath", "filename", "extension", "size_bytes", "url",
+               "bucket_name", "provider_name", "ai_classification", "last_modified"]
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for item in items:
+        writer.writerow(item)
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="cloudscan-export-{timestamp}.csv"'},
+    )
 
 
 @api.route("/files/random")
@@ -591,6 +657,63 @@ def resolve_alert(alert_id):
 @auth_required_strict
 def monitor_dashboard():
     return jsonify(WatchlistStore.get_dashboard(g.user_id))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# WEBHOOKS
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/monitor/webhooks", methods=["POST"])
+@auth_required_strict
+def create_webhook():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    url = data.get("url", "").strip()
+    secret = data.get("secret", "").strip() or None
+    event_types = data.get("event_types", ["critical", "high"])
+
+    if not name or not url:
+        return jsonify({"error": "name and url are required"}), 400
+    if not url.startswith("http"):
+        return jsonify({"error": "url must start with http:// or https://"}), 400
+
+    wh = WebhookStore.create(g.user_id, name, url, secret, event_types)
+    return jsonify(wh), 201
+
+
+@api.route("/monitor/webhooks")
+@auth_required_strict
+def list_webhooks():
+    return jsonify({"items": WebhookStore.list_by_user(g.user_id)})
+
+
+@api.route("/monitor/webhooks/<int:wh_id>", methods=["PUT"])
+@auth_required_strict
+def update_webhook(wh_id):
+    if not WebhookStore.get(wh_id, g.user_id):
+        return jsonify({"error": "Webhook not found"}), 404
+    data = request.get_json(silent=True) or {}
+    WebhookStore.update(wh_id, g.user_id, **data)
+    return jsonify(WebhookStore.get(wh_id, g.user_id))
+
+
+@api.route("/monitor/webhooks/<int:wh_id>", methods=["DELETE"])
+@auth_required_strict
+def delete_webhook(wh_id):
+    if not WebhookStore.delete(wh_id, g.user_id):
+        return jsonify({"error": "Webhook not found"}), 404
+    return jsonify({"message": "Deleted"})
+
+
+@api.route("/monitor/webhooks/<int:wh_id>/test", methods=["POST"])
+@auth_required_strict
+def test_webhook(wh_id):
+    wh = WebhookStore.get(wh_id, g.user_id)
+    if not wh:
+        return jsonify({"error": "Webhook not found"}), 404
+    from backend.app.services.webhook_service import send_test
+    result = send_test(wh)
+    return jsonify(result)
 
 
 # ═══════════════════════════════════════════════════════════════════

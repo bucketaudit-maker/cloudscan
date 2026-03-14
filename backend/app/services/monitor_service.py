@@ -30,6 +30,15 @@ from backend.app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _dispatch_webhook(alert_dict: dict, user_id: int):
+    """Fire webhooks for an alert, silently catching any errors."""
+    try:
+        from backend.app.services.webhook_service import dispatch_alert
+        dispatch_alert(alert_dict, user_id)
+    except Exception as e:
+        logger.error(f"[Monitor] Webhook dispatch error: {e}")
+
+
 class MonitoringService:
     """Executes watchlist scans and generates security alerts."""
 
@@ -106,6 +115,7 @@ class MonitoringService:
                         bucket_id=bucket_id,
                         metadata={"from": prev_status, "to": result.status},
                     )
+                    _dispatch_webhook({"alert_type": "status_change", "severity": severity, "title": f"Bucket status changed: {result.name}", "description": f"{prev_status} → {result.status}"}, user_id)
                     results_summary["alerts_created"] += 1
 
                 # ── Alert: New open bucket ──
@@ -119,6 +129,7 @@ class MonitoringService:
                         bucket_id=bucket_id,
                         metadata={"provider": result.provider, "file_count": result.file_count},
                     )
+                    _dispatch_webhook({"alert_type": "new_bucket", "severity": "high", "title": f"New open bucket discovered: {result.name}", "description": f"{result.provider}://{result.name} — {result.file_count} files exposed"}, user_id)
                     results_summary["alerts_created"] += 1
 
                 # ── Alert: New files in existing bucket ──
@@ -133,6 +144,7 @@ class MonitoringService:
                         bucket_id=bucket_id,
                         metadata={"prev": prev_count, "curr": result.file_count},
                     )
+                    _dispatch_webhook({"alert_type": "new_files", "severity": "medium", "title": f"{new_files} new files in {result.name}", "description": f"File count: {prev_count} → {result.file_count}"}, user_id)
                     results_summary["alerts_created"] += 1
 
                 # ── Alert: Sensitive files ──
@@ -148,6 +160,7 @@ class MonitoringService:
                             bucket_id=bucket_id,
                             metadata={"pattern": finding["pattern"], "file": finding["file"]["filepath"]},
                         )
+                        _dispatch_webhook({"alert_type": "sensitive_file", "severity": finding["severity"], "title": finding["title"], "description": f"Found in {result.provider}://{result.name}/{finding['file']['filepath']}"}, user_id)
                         results_summary["alerts_created"] += 1
 
                 results_summary["new_buckets"] += 1
