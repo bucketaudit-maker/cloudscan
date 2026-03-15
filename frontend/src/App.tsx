@@ -241,9 +241,9 @@ export default function App() {
         </div></div>}
 
       {/* ─── HOME ─── */}
-      {view==='home' && <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'radial-gradient(ellipse 80% 50% at 50% -20%,#00e87b06 0%,transparent 60%),var(--bg-primary)',position:'relative',overflow:'hidden'}}>
+      {view==='home' && <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',background:'radial-gradient(ellipse 80% 50% at 50% -20%,#00e87b06 0%,transparent 60%),var(--bg-primary)',position:'relative',overflow:'hidden'}}>
         <div style={{position:'absolute',inset:0,opacity:0.025,backgroundImage:'linear-gradient(var(--accent) 1px,transparent 1px),linear-gradient(90deg,var(--accent) 1px,transparent 1px)',backgroundSize:'60px 60px'}}/>
-        <div style={{position:'relative',textAlign:'center',maxWidth:800,padding:'0 24px'}}>
+        <div style={{position:'relative',textAlign:'center',maxWidth:800,padding:'80px 24px 40px'}}>
           {stats?.providers && <div style={{display:'flex',justifyContent:'center',gap:32,marginBottom:48}} className="fade-in">{stats.providers.map((p:any)=><div key={p.name} style={{textAlign:'center'}}><div style={{fontSize:24,fontWeight:800,fontFamily:'var(--font-display)',color:PC[p.name]?.bg||'#fff'}}>{fnum(p.bucket_count)}</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{PL[p.name]||p.name}</div></div>)}</div>}
           <h1 style={{fontSize:52,fontWeight:800,lineHeight:1.05,margin:'0 0 16px',fontFamily:'var(--font-display)',background:'linear-gradient(135deg,var(--text-primary) 0%,var(--text-secondary) 100%)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}} className="fade-in">Search Open<br/>Cloud Storage</h1>
           <p style={{fontSize:14,color:'var(--text-tertiary)',lineHeight:1.6,margin:'0 auto 40px',maxWidth:520}}>Discover exposed buckets & files across <span style={{color:'var(--aws)'}}>AWS</span>, <span style={{color:'var(--azure)'}}>Azure</span>, <span style={{color:'var(--gcp)'}}>GCP</span>, <span style={{color:'var(--digitalocean)'}}>DigitalOcean</span> & <span style={{color:'var(--alibaba)'}}>Alibaba</span></p>
