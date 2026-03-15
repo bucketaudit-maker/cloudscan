@@ -18,7 +18,7 @@ const apiFetch = async (ep:string, opts:any={}) => {
     if(_token) headers['Authorization'] = `Bearer ${_token}`
     const r = await fetch(`${API}${ep}`,{...opts, headers})
     if(r.status === 401) { _token = null; try{localStorage.removeItem('cs_token')}catch{} }
-    if(!r.ok) throw r
+    if(!r.ok) { try { return await r.json() } catch { return null } }
     return await r.json()
   } catch{ return null }
 }
@@ -112,7 +112,7 @@ export default function App() {
 
   const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
   const doRegister = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/register',{method:'POST',body:JSON.stringify(authForm)}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Registration failed');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setShowWelcome(true); setView('home'); setAuthForm({email:'',username:'',password:''}) }
-  const doLogout = () => { _token=null; try{localStorage.removeItem('cs_token')}catch{}; setUser(null); setView('home') }
+  const doLogout = () => { _token=null; try{localStorage.removeItem('cs_token')}catch{}; setUser(null); setView('home'); setAuthMode('login'); setAuthError(''); setAuthSuccess('') }
   const doForgotPassword = async() => {
     setAuthError(''); setAuthSuccess(''); setAuthLoading(true)
     const r = await apiFetch('/auth/forgot-password',{method:'POST',body:JSON.stringify({email:authForm.email})})
@@ -226,7 +226,7 @@ export default function App() {
           <span style={{fontSize:9,background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'1px 6px',borderRadius:3,textTransform:'uppercase' as const}}>{user.tier}</span>
           <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)})}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
           <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11}}>Logout</button>
-        </div> : <button onClick={()=>setView('auth')} style={{background:'var(--accent)',border:'none',color:'#000',padding:'6px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Sign In</button>}
+        </div> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'6px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Sign In</button>}
       </nav>
 
       {/* ─── AUTH ─── */}
@@ -476,7 +476,7 @@ export default function App() {
         {!user ? <div style={{textAlign:'center',padding:80}}>
           <div style={{fontSize:48,marginBottom:16}}>🛡</div><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>Attack Surface Monitoring</h2>
           <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:24,maxWidth:500,margin:'0 auto 24px'}}>Continuously monitor your organization's cloud storage exposure.</p>
-          <button onClick={()=>setView('auth')} style={{background:'var(--accent)',border:'none',color:'#000',padding:'10px 28px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:700}}>Sign In to Get Started</button>
+          <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'10px 28px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:700}}>Sign In to Get Started</button>
         </div> : <>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>🛡 Attack Surface Monitor</h2><span style={{fontSize:11,color:'var(--text-muted)'}}>Logged in as <span style={{color:'var(--accent)'}}>{user.username}</span></span></div>
           {monDash && <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:32}}>{[['Watchlists',monDash.watchlists,'◉','var(--accent)'],['Monitored',monDash.monitored_buckets,'◫','var(--info)'],['Unread',monDash.unread_alerts,'⚠','var(--warning)'],['Critical',monDash.alerts_by_severity?.critical||0,'●','var(--danger)']].map(([l,v,ic,c]:any)=><div key={l} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}><div style={{fontSize:24,marginBottom:4}}>{ic}</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:c}}>{v}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{l}</div></div>)}</div>}
