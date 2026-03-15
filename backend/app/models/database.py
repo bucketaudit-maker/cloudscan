@@ -590,17 +590,29 @@ class FileStore:
     @staticmethod
     def get_timeline(days: int = 30) -> dict:
         with get_db() as db:
-            cutoff = f"-{days} days"
-            files_tl = [dict(r) for r in db.execute("""
-                SELECT date(indexed_at) as day, COUNT(*) as count
-                FROM files WHERE indexed_at >= datetime('now', %s)
-                GROUP BY date(indexed_at) ORDER BY day
-            """, (cutoff,)).fetchall()]
-            buckets_tl = [dict(r) for r in db.execute("""
-                SELECT date(first_seen) as day, COUNT(*) as count
-                FROM buckets WHERE first_seen >= datetime('now', %s)
-                GROUP BY date(first_seen) ORDER BY day
-            """, (cutoff,)).fetchall()]
+            if settings.is_postgres:
+                files_tl = [dict(r) for r in db.execute("""
+                    SELECT indexed_at::date::text as day, COUNT(*) as count
+                    FROM files WHERE indexed_at >= NOW() - INTERVAL '%s days'
+                    GROUP BY indexed_at::date ORDER BY day
+                """ % days).fetchall()]
+                buckets_tl = [dict(r) for r in db.execute("""
+                    SELECT first_seen::date::text as day, COUNT(*) as count
+                    FROM buckets WHERE first_seen >= NOW() - INTERVAL '%s days'
+                    GROUP BY first_seen::date ORDER BY day
+                """ % days).fetchall()]
+            else:
+                cutoff = f"-{days} days"
+                files_tl = [dict(r) for r in db.execute("""
+                    SELECT date(indexed_at) as day, COUNT(*) as count
+                    FROM files WHERE indexed_at >= datetime('now', %s)
+                    GROUP BY date(indexed_at) ORDER BY day
+                """, (cutoff,)).fetchall()]
+                buckets_tl = [dict(r) for r in db.execute("""
+                    SELECT date(first_seen) as day, COUNT(*) as count
+                    FROM buckets WHERE first_seen >= datetime('now', %s)
+                    GROUP BY date(first_seen) ORDER BY day
+                """, (cutoff,)).fetchall()]
             return {
                 "files_timeline": files_tl,
                 "buckets_timeline": buckets_tl,
