@@ -20,10 +20,16 @@ from backend.app.config import settings
 logger = logging.getLogger(__name__)
 
 
+class ScanCancelled(Exception):
+    """Raised when a scan is cancelled by the user."""
+    pass
+
+
 class ScanService:
     def __init__(self, event_callback: Callable = None):
         self._event_cb = event_callback
         self._active_threads: dict[int, threading.Thread] = {}
+        self._cancelled_jobs: set[int] = set()
 
     def _emit(self, event_type: str, data: dict):
         if self._event_cb:
@@ -79,6 +85,7 @@ class ScanService:
                     pass
             finally:
                 self._active_threads.pop(job_id, None)
+                self._cancelled_jobs.discard(job_id)
                 logger.info(f"[Thread {job_id}] Thread exiting")
 
         t = threading.Thread(target=_thread_target, daemon=True, name=f"scan-{job_id}")
@@ -106,6 +113,9 @@ class ScanService:
         errors_list = []
 
         def on_progress(progress: ScanProgress):
+            if job_id in self._cancelled_jobs:
+                logger.info(f"[Scan {job_id}] Cancellation detected in progress callback")
+                raise ScanCancelled(f"Scan {job_id} cancelled by user")
             progress.job_id = job_id
             self._emit("progress", progress.to_dict())
             try:
@@ -162,18 +172,26 @@ class ScanService:
                 regions_per_provider=regions_per_provider,
                 on_progress=on_progress, on_result=on_result)
 
-            ScanJobStore.update(job_id,
-                status="completed",
-                completed_at=datetime.utcnow().isoformat(),
-                buckets_found=scanner.progress.buckets_found,
-                buckets_open=scanner.progress.buckets_open,
-                files_indexed=scanner.progress.files_indexed,
-                names_checked=scanner.progress.names_checked,
-                errors=json.dumps(errors_list[-50:]) if errors_list else None)
+            # Don't overwrite status if scan was cancelled while finishing
+            if job_id in self._cancelled_jobs:
+                logger.info(f"[Scan {job_id}] Completed but was cancelled, keeping cancelled status")
+            else:
+                ScanJobStore.update(job_id,
+                    status="completed",
+                    completed_at=datetime.utcnow().isoformat(),
+                    buckets_found=scanner.progress.buckets_found,
+                    buckets_open=scanner.progress.buckets_open,
+                    files_indexed=scanner.progress.files_indexed,
+                    names_checked=scanner.progress.names_checked,
+                    errors=json.dumps(errors_list[-50:]) if errors_list else None)
 
-            self._emit("scan_complete", {
-                "job_id": job_id, "stats": scanner.progress.to_dict()})
-            logger.info(f"[Scan {job_id}] COMPLETE: {scanner.progress.buckets_open} open, {scanner.progress.files_indexed} files")
+                self._emit("scan_complete", {
+                    "job_id": job_id, "stats": scanner.progress.to_dict()})
+                logger.info(f"[Scan {job_id}] COMPLETE: {scanner.progress.buckets_open} open, {scanner.progress.files_indexed} files")
+
+        except ScanCancelled:
+            logger.info(f"[Scan {job_id}] Scan aborted by cancellation")
+            # Status already set to "cancelled" in cancel_scan()
 
         except Exception as e:
             logger.error(f"[Scan {job_id}] FAILED in run_discovery: {e}\n{traceback.format_exc()}")
@@ -187,6 +205,7 @@ class ScanService:
     def cancel_scan(self, job_id: int) -> bool:
         t = self._active_threads.get(job_id)
         if t and t.is_alive():
+            self._cancelled_jobs.add(job_id)
             ScanJobStore.update(job_id, status="cancelled",
                 completed_at=datetime.utcnow().isoformat())
             self._emit("scan_cancelled", {"job_id": job_id})
