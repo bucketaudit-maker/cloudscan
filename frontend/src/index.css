@@ -47,6 +47,36 @@
   --radius-xl: 16px;
 }
 
+[data-theme="light"] {
+  --bg-primary: #f5f7fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #edf0f5;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e4e8ee;
+
+  --border-subtle: #dde2e8;
+  --border-default: #ccd2da;
+  --border-strong: #b0b8c4;
+
+  --text-primary: #1a2030;
+  --text-secondary: #4a5568;
+  --text-tertiary: #718096;
+  --text-muted: #a0aec0;
+
+  --accent: #00b85e;
+  --accent-dim: #009e50;
+  --accent-glow: #00b85e18;
+  --accent-bg: #00b85e0c;
+
+  --danger: #e53e3e;
+  --warning: #dd8a00;
+  --info: #3182ce;
+
+  --ai-accent: #8b3fd9;
+  --ai-accent-dim: #6b2fb0;
+  --ai-accent-glow: #8b3fd918;
+}
+
 * {
   margin: 0;
   padding: 0;
