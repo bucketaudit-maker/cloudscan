@@ -83,6 +83,14 @@ export default function App() {
   const [suggestedKw,setSuggestedKw] = useState<string[]>([]); const [suggestLoading,setSuggestLoading] = useState(false)
   const [aiClassSummary,setAiClassSummary] = useState<any>(null); const [classifyLoading,setClassifyLoading] = useState(false)
   const [aiProvider,setAiProvider] = useState(''); const [aiProviders,setAiProviders] = useState<any[]>([]); const [providerSwitching,setProviderSwitching] = useState(false)
+  // Sprint 3 state
+  const [theme,setTheme] = useState<'dark'|'light'>(()=>{ try{return(localStorage.getItem('cs_theme') as 'dark'|'light')||'dark'}catch{return 'dark'} })
+  const [alertSevFilter,setAlertSevFilter] = useState('')
+  const [scanHistory,setScanHistory] = useState<any[]>([]); const [scanHistoryLoading,setScanHistoryLoading] = useState(false)
+  const [showApiKey,setShowApiKey] = useState(false); const [settingsForm,setSettingsForm] = useState({username:'',password:'',confirmPassword:''}); const [settingsMsg,setSettingsMsg] = useState('')
+  const [activity,setActivity] = useState<any>(null); const [activityPage,setActivityPage] = useState(1)
+
+  useEffect(()=>{ document.documentElement.setAttribute('data-theme',theme); try{localStorage.setItem('cs_theme',theme)}catch{} },[theme])
 
   useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d){setAiAvail(d.available||false);setAiProvider(d.active_provider||'');setAiProviders(d.providers||[])} }); apiFetch('/stats/timeline?days=30').then(d=>d&&setDashTimeline(d)); apiFetch('/stats/breakdown').then(d=>d&&setDashBreakdown(d)) }, [])
   useEffect(() => { if(_token) { apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }); apiFetch('/searches/saved').then(d=>{if(d?.items)setSavedSearches(d.items)}) } }, [])
@@ -149,7 +157,7 @@ export default function App() {
     const r=await apiFetch('/scans',{method:'POST',body:JSON.stringify(d)}); setScanStatus(r)
     if(r?.id){const pollId=setInterval(async()=>{const job=await apiFetch(`/scans/${r.id}`);if(!job)return;if(job.progress){try{setScanProgress(typeof job.progress==='string'?JSON.parse(job.progress):job.progress)}catch{}}
       setScanProgress((prev:any)=>({...prev,names_checked:job.names_checked||prev?.names_checked||0,buckets_found:job.buckets_found||prev?.buckets_found||0,buckets_open:job.buckets_open||prev?.buckets_open||0,files_indexed:job.files_indexed||prev?.files_indexed||0,phase:job.status==='completed'?'complete':job.status==='failed'?'failed':prev?.phase||'scanning'}))
-      if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d))}},2000)}
+      if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d));loadScanHistory()}},2000)}
   }
 
   // ── AI helper functions ──
@@ -159,6 +167,14 @@ export default function App() {
   const doClassifyBucket = async(bid:number) => { setClassifyLoading(true); await apiFetch(`/ai/classify/${bid}`,{method:'POST'}); await apiFetch(`/ai/risk/${bid}`,{method:'POST'}); const b=await apiFetch(`/buckets/${bid}`); if(b)setBd(b); const cs=await apiFetch(`/ai/classifications?bucket_id=${bid}`); if(cs)setAiClassSummary(cs.summary); setClassifyLoading(false) }
   const doPrioritizeAlerts = async() => { await apiFetch('/ai/prioritize-alerts',{method:'POST'}); loadMonitor() }
   const doSwitchProvider = async(name:string) => { setProviderSwitching(true); const r=await apiFetch('/ai/provider',{method:'POST',body:JSON.stringify({provider:name})}); if(r?.active_provider){setAiProvider(r.active_provider); const s=await apiFetch('/ai/status'); if(s){setAiAvail(s.available||false);setAiProviders(s.providers||[])}} setProviderSwitching(false) }
+  // Sprint 3 handlers
+  const resolveAlert = async(id:number) => { await apiFetch(`/monitor/alerts/${id}/resolve`,{method:'POST'}); loadMonitor() }
+  const markAllAlertsRead = async() => { await apiFetch('/monitor/alerts/read-all',{method:'POST'}); loadMonitor() }
+  const loadScanHistory = async() => { setScanHistoryLoading(true); const d=await apiFetch('/scans'); if(d?.items)setScanHistory(d.items); setScanHistoryLoading(false) }
+  const cancelScan = async(id:number) => { await apiFetch(`/scans/${id}/cancel`,{method:'POST'}); loadScanHistory() }
+  const rotateApiKey = async() => { if(!confirm('Rotate API key? The current key will stop working immediately.'))return; const r=await apiFetch('/auth/rotate-key',{method:'POST'}); if(r?.api_key){setUser((u:any)=>({...u,api_key:r.api_key}));setShowApiKey(true);setSettingsMsg('API key rotated successfully')} }
+  const updateSettings = async() => { if(settingsForm.password&&settingsForm.password!==settingsForm.confirmPassword){setSettingsMsg('Passwords do not match');return} const body:any={}; if(settingsForm.username.trim())body.username=settingsForm.username.trim(); if(settingsForm.password)body.password=settingsForm.password; if(!Object.keys(body).length){setSettingsMsg('No changes to save');return} const r=await apiFetch('/auth/settings',{method:'PUT',body:JSON.stringify(body)}); if(r?.id){setUser(r);setSettingsMsg('Settings updated');setSettingsForm({username:'',password:'',confirmPassword:''})}else{setSettingsMsg(r?.error||'Update failed')} }
+  const loadActivity = async(page:number=1) => { setActivityPage(page); const d=await apiFetch(`/activity?page=${page}&per_page=50`); if(d)setActivity(d) }
 
   // ═══════════════════════════════════════════════════════════════
   // ALL VIEWS INLINED — no component functions inside App()
@@ -172,18 +188,20 @@ export default function App() {
           <div style={{width:28,height:28,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:17,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:4}}>
-          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['ai-insights','AI','✦'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
-            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else setView(id as string)}}
+          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
+            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
               style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-tertiary)',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>
               <span style={{marginRight:5,fontSize:11}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:5}}>{monDash.unread_alerts}</span>:null}
             </button>))}</div>
         <div style={{flex:1}}/>
+        <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontSize:14,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
         {sseConnected && <div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--accent)'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',animation:'pulse 2s infinite'}}/>LIVE</div>}
         {stats && <div style={{display:'flex',gap:20,fontSize:11,color:'var(--text-muted)'}}><span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
         {user ? <div style={{display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:11,color:'var(--text-secondary)'}}>{user.username}</span>
           <span style={{fontSize:9,background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'1px 6px',borderRadius:3,textTransform:'uppercase' as const}}>{user.tier}</span>
+          <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)})}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
           <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11}}>Logout</button>
         </div> : <button onClick={()=>setView('auth')} style={{background:'var(--accent)',border:'none',color:'#000',padding:'6px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Sign In</button>}
       </nav>
@@ -390,7 +408,22 @@ export default function App() {
           <div style={{marginBottom:24}}><label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:8}}>PROVIDERS</label>
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{Object.entries(PL).map(([k,l])=>{const a=scanForm.providers.includes(k);return <button key={k} onClick={()=>setScanForm({...scanForm,providers:a?scanForm.providers.filter(p=>p!==k):[...scanForm.providers,k]})} style={{background:a?PC[k].bg+'20':'var(--bg-primary)',border:`1px solid ${a?PC[k].bg:'var(--border-subtle)'}`,borderRadius:8,padding:'6px 14px',cursor:'pointer',color:a?PC[k].bg:'var(--text-muted)',fontSize:12,fontWeight:a?600:400}}>{l as string}</button>})}</div></div>
           <button onClick={startScan} disabled={scanProgress?.phase==='scanning'} style={{width:'100%',background:scanProgress?.phase==='scanning'?'var(--bg-tertiary)':'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:scanProgress?.phase==='scanning'?'var(--text-tertiary)':'#000',fontWeight:700,fontSize:14,cursor:scanProgress?.phase==='scanning'?'not-allowed':'pointer',fontFamily:'var(--font-mono)'}}>{scanProgress?.phase==='scanning'?'⟳ SCAN IN PROGRESS...':'⟳ START DISCOVERY SCAN'}</button>
-        </div></div>}
+        </div>
+        {/* Scan History */}
+        {scanHistory.length>0 && <div style={{marginTop:32}}>
+          <h3 style={{fontSize:15,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:12}}>Scan History</h3>
+          <div style={{display:'grid',gridTemplateColumns:'90px 1fr 80px 80px 80px 80px 70px',gap:8,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>Status</span><span>Config</span><span>Checked</span><span>Buckets</span><span>Files</span><span>Time</span><span/></div>
+          {scanHistory.map((j:any,i:number)=>{const sc:any={completed:'var(--accent)',failed:'var(--danger)',cancelled:'var(--text-muted)',running:'var(--info)',pending:'var(--warning)'}; const cfg=typeof j.config==='string'?JSON.parse(j.config||'{}'):j.config||{}; return <div key={j.id} style={{display:'grid',gridTemplateColumns:'90px 1fr 80px 80px 80px 80px 70px',gap:8,padding:'10px 16px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
+            <span style={{fontSize:10,fontWeight:600,color:sc[j.status]||'var(--text-muted)',textTransform:'uppercase' as const}}>{j.status}</span>
+            <span style={{fontSize:11,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{(cfg.keywords||[]).join(', ')||(cfg.companies||[]).join(', ')||'—'}</span>
+            <span style={{fontSize:11,color:'var(--text-secondary)'}}>{fnum(j.names_checked||0)}</span>
+            <span style={{fontSize:11,color:'var(--accent)'}}>{j.buckets_found||0} ({j.buckets_open||0})</span>
+            <span style={{fontSize:11,color:'var(--text-secondary)'}}>{fnum(j.files_indexed||0)}</span>
+            <span style={{fontSize:10,color:'var(--text-muted)'}}>{ago(j.started_at||j.created_at)}</span>
+            {(j.status==='running'||j.status==='pending')?<button onClick={()=>cancelScan(j.id)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--danger)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10}}>Cancel</button>:<span/>}
+          </div>})}
+        </div>}
+        </div>}
 
       {/* ─── MONITOR ─── */}
       {view==='monitor' && <div style={{padding:'80px 24px 24px',maxWidth:1100,margin:'0 auto'}}>
@@ -416,10 +449,16 @@ export default function App() {
             {watchlists.map((wl:any)=><div key={wl.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{wl.name}</div><div style={{fontSize:11,color:'var(--text-muted)'}}>Keywords: {(typeof wl.keywords==='string'?JSON.parse(wl.keywords):wl.keywords).join(', ')} | Every {wl.scan_interval_hours}h | Last: {ago(wl.last_scan_at)}</div></div>
               <div style={{display:'flex',gap:6}}><button onClick={()=>triggerWlScan(wl.id)} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:11}}>Scan Now</button><button onClick={()=>deleteWl(wl.id)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:11}}>Delete</button></div></div>)}</div>}
-          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}><h3 style={{fontSize:15,margin:0}}>Alerts {alerts?.total?<span style={{fontSize:12,color:'var(--text-muted)'}}>({alerts.total})</span>:null}</h3>{aiAvail&&alerts?.items?.length>0&&<button onClick={doPrioritizeAlerts} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'4px 12px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:10,fontWeight:600}}>✦ AI Prioritize</button>}</div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+            <h3 style={{fontSize:15,margin:0}}>Alerts {alerts?.total?<span style={{fontSize:12,color:'var(--text-muted)'}}>({alerts.total})</span>:null}</h3>
+            {monDash?.unread_alerts>0&&<button onClick={markAllAlertsRead} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Mark All Read</button>}
+            {aiAvail&&alerts?.items?.length>0&&<button onClick={doPrioritizeAlerts} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'4px 12px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:10,fontWeight:600}}>✦ AI Prioritize</button>}
+            <div style={{display:'flex',gap:4,marginLeft:'auto'}}>{['','critical','high','medium','low','info'].map(s=><button key={s} onClick={()=>{setAlertSevFilter(s);const params=s?`?severity=${s}`:'';apiFetch(`/monitor/alerts${params}`).then(d=>{if(d)setAlerts(d)})}} style={{background:alertSevFilter===s?'var(--bg-tertiary)':'transparent',border:alertSevFilter===s?'1px solid var(--border-default)':'1px solid transparent',color:alertSevFilter===s?'var(--accent)':'var(--text-muted)',padding:'3px 10px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,textTransform:'uppercase' as const}}>{s||'All'}</button>)}</div>
+          </div>
           {!alerts?.items?.length ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:13}}>No alerts yet. Create a watchlist and run a scan.</div>
-          : <div style={{display:'flex',flexDirection:'column',gap:4}}>{alerts.items.map((a:any)=><div key={a.id} onClick={()=>markAlertRead(a.id)} style={{background:a.is_read?'var(--bg-secondary)':'var(--bg-tertiary)',border:`1px solid ${a.is_read?'var(--border-default)':'var(--border-strong)'}`,borderRadius:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-            <SevBadge s={a.severity}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:a.is_read?400:600,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.title}</div><div style={{fontSize:11,color:'var(--text-muted)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.description}</div></div>
+          : <div style={{display:'flex',flexDirection:'column',gap:4}}>{alerts.items.map((a:any)=><div key={a.id} onClick={()=>!a.is_read&&markAlertRead(a.id)} style={{background:a.is_resolved?'var(--bg-primary)':a.is_read?'var(--bg-secondary)':'var(--bg-tertiary)',border:`1px solid ${a.is_resolved?'var(--border-subtle)':a.is_read?'var(--border-default)':'var(--border-strong)'}`,borderRadius:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',opacity:a.is_resolved?0.6:1}}>
+            <SevBadge s={a.severity}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:a.is_read?400:600,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis',textDecoration:a.is_resolved?'line-through':'none'}}>{a.title}</div><div style={{fontSize:11,color:'var(--text-muted)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.description}</div></div>
+            {a.is_resolved?<span style={{fontSize:10,color:'var(--accent)',fontWeight:600}}>✓ Resolved</span>:<button onClick={(e)=>{e.stopPropagation();resolveAlert(a.id)}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>Resolve</button>}
             {a.ai_priority_score!=null&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>⚡{a.ai_priority_score}</span>}{a.provider_name&&<Badge provider={a.provider_name}/>}<span style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap' as const}}>{ago(a.created_at)}</span>{!a.is_read&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>}</div>)}</div>}
           <div style={{marginTop:32}}>
             <h3 style={{fontSize:15,marginBottom:12}}>Webhooks</h3>
@@ -492,6 +531,59 @@ export default function App() {
               <ClassBadge c={cat}/><span style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-display)',color:'var(--text-secondary)'}}>{cnt}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>files</span></div>)}
           </div> : <div style={{textAlign:'center',padding:32,color:'var(--text-muted)',fontSize:12}}>No classified files yet. Use AI Analyze on a bucket to classify its files.</div>}
         </div>
+      </div>}
+
+      {/* ─── SETTINGS ─── */}
+      {view==='settings' && user && <div style={{padding:'80px 24px 24px',maxWidth:600,margin:'0 auto'}}>
+        <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:24}}>Account Settings</h2>
+        {settingsMsg&&<div style={{background:settingsMsg.includes('fail')||settingsMsg.includes('match')?'rgba(240,72,72,0.1)':'var(--accent-bg)',border:`1px solid ${settingsMsg.includes('fail')||settingsMsg.includes('match')?'rgba(240,72,72,0.2)':'rgba(0,232,123,0.2)'}`,borderRadius:8,padding:'8px 16px',marginBottom:16,fontSize:12,color:settingsMsg.includes('fail')||settingsMsg.includes('match')?'var(--danger)':'var(--accent)'}}>{settingsMsg}</div>}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+          <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Account Info</h3>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            {[['Email',user.email],['Username',user.username],['Tier',user.tier?.toUpperCase()],['Member Since',user.created_at?new Date(user.created_at).toLocaleDateString():'—'],['Last Login',ago(user.last_login)],['Queries Today',user.queries_today||0]].map(([l,v]:any)=><div key={l} style={{padding:12,background:'var(--bg-primary)',borderRadius:8,border:'1px solid var(--border-subtle)'}}><div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase' as const}}>{l}</div><div style={{fontSize:13,color:'var(--text-primary)',fontWeight:600}}>{v}</div></div>)}
+          </div>
+        </div>
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+          <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>API Key</h3>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{flex:1,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',fontFamily:'var(--font-mono)',fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{showApiKey?user.api_key:'cs_••••••••••••••••••••••••••••••'}</div>
+            <button onClick={()=>setShowApiKey(!showApiKey)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>{showApiKey?'Hide':'Show'}</button>
+            <button onClick={rotateApiKey} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--warning)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>Rotate</button>
+          </div>
+        </div>
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24}}>
+          <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Update Profile</h3>
+          <div style={{marginBottom:12}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>NEW USERNAME</label>
+            <input value={settingsForm.username} onChange={e=>setSettingsForm({...settingsForm,username:e.target.value})} placeholder={user.username} style={IS}/></div>
+          <div style={{marginBottom:12}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>NEW PASSWORD</label>
+            <input type="password" value={settingsForm.password} onChange={e=>setSettingsForm({...settingsForm,password:e.target.value})} placeholder="Leave blank to keep current" style={IS}/></div>
+          <div style={{marginBottom:16}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>CONFIRM PASSWORD</label>
+            <input type="password" value={settingsForm.confirmPassword} onChange={e=>setSettingsForm({...settingsForm,confirmPassword:e.target.value})} placeholder="Confirm new password" style={IS}/></div>
+          <button onClick={updateSettings} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>Save Changes</button>
+        </div>
+      </div>}
+
+      {/* ─── ACTIVITY LOG ─── */}
+      {view==='activity' && <div style={{padding:'80px 24px 24px',maxWidth:1000,margin:'0 auto'}}>
+        <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>Activity Log</h2>
+        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:24}}>Your API request history.</p>
+        {!user ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:13}}>Sign in to view your activity log.</div>
+        : !activity?.items?.length ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:13}}>No activity recorded yet.</div>
+        : <>
+          <div style={{display:'grid',gridTemplateColumns:'60px 1fr 50px 60px 100px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>Method</span><span>Endpoint</span><span>Status</span><span>Time</span><span>When</span></div>
+          {activity.items.map((a:any,i:number)=>{const mc:any={GET:'var(--accent)',POST:'var(--info)',PUT:'var(--warning)',DELETE:'var(--danger)'};return <div key={a.id||i} style={{display:'grid',gridTemplateColumns:'60px 1fr 50px 60px 100px',gap:12,padding:'10px 16px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
+            <span style={{fontSize:10,fontWeight:700,color:mc[a.method]||'var(--text-muted)'}}>{a.method}</span>
+            <span style={{fontSize:11,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{a.endpoint}</span>
+            <span style={{fontSize:10,fontWeight:600,color:a.response_status<400?'var(--accent)':a.response_status<500?'var(--warning)':'var(--danger)'}}>{a.response_status}</span>
+            <span style={{fontSize:10,color:'var(--text-muted)'}}>{a.response_time_ms!=null?`${a.response_time_ms}ms`:'—'}</span>
+            <span style={{fontSize:10,color:'var(--text-muted)'}}>{ago(a.created_at)}</span>
+          </div>})}
+          {activity.total>50&&<div style={{display:'flex',justifyContent:'center',gap:8,marginTop:16}}>
+            <button disabled={activityPage<=1} onClick={()=>loadActivity(activityPage-1)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'6px 14px',cursor:activityPage<=1?'not-allowed':'pointer',color:'var(--text-secondary)',fontSize:12,opacity:activityPage<=1?0.5:1}}>Prev</button>
+            <span style={{padding:'6px 14px',fontSize:12,color:'var(--text-muted)'}}>Page {activityPage} of {Math.ceil(activity.total/50)}</span>
+            <button disabled={activityPage>=Math.ceil(activity.total/50)} onClick={()=>loadActivity(activityPage+1)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'6px 14px',cursor:activityPage>=Math.ceil(activity.total/50)?'not-allowed':'pointer',color:'var(--text-secondary)',fontSize:12,opacity:activityPage>=Math.ceil(activity.total/50)?0.5:1}}>Next</button>
+          </div>}
+        </>}
       </div>}
 
       {/* ─── API DOCS ─── */}

@@ -1055,3 +1055,41 @@ class SavedSearchStore:
                 (search_id, user_id),
             )
             return db.rowcount > 0
+
+
+class ApiLogStore:
+    @staticmethod
+    def log(user_id: int, endpoint: str, method: str, query_params: str,
+            ip_address: str, user_agent: str, response_status: int,
+            response_time_ms: int):
+        try:
+            with get_db() as db:
+                db.execute("""
+                    INSERT INTO api_log
+                        (user_id, endpoint, method, query_params, ip_address,
+                         user_agent, response_status, response_time_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (user_id, endpoint, method, query_params, ip_address,
+                      user_agent, response_status, response_time_ms))
+        except Exception as e:
+            logger.debug(f"Failed to log API request: {e}")
+
+    @staticmethod
+    def list_by_user(user_id: int, page: int = 1, per_page: int = 50) -> dict:
+        with get_db() as db:
+            total = db.execute(
+                "SELECT COUNT(*) FROM api_log WHERE user_id=%s", (user_id,)
+            ).fetchone()[0]
+            rows = db.execute(
+                """SELECT id, endpoint, method, query_params, ip_address,
+                          response_status, response_time_ms, created_at
+                   FROM api_log WHERE user_id=%s
+                   ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+                (user_id, per_page, (page - 1) * per_page),
+            ).fetchall()
+            return {
+                "items": [dict(r) for r in rows],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }

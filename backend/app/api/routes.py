@@ -14,7 +14,7 @@ from backend.app.config import settings
 from backend.app.models.database import (
     get_db, BucketStore, FileStore, ScanJobStore, init_db,
     WatchlistStore, AlertStore, MonitoredAssetStore, WebhookStore,
-    SavedSearchStore,
+    SavedSearchStore, ApiLogStore,
 )
 from backend.app.utils.auth import (
     auth_required, auth_required_strict, rate_limit,
@@ -53,6 +53,39 @@ def broadcast_event(event_type: str, data: dict):
 
 # Scan service singleton with event broadcasting
 scan_service = ScanService(event_callback=broadcast_event)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# REQUEST LOGGING MIDDLEWARE
+# ═══════════════════════════════════════════════════════════════════
+
+@api.before_request
+def _start_timer():
+    g._request_start = time.monotonic()
+
+
+@api.after_request
+def _log_request(response):
+    # Skip SSE endpoint (long-lived connection) and health checks
+    if request.path.endswith("/events/scans") or request.path.endswith("/health"):
+        return response
+
+    user_id = g.get("user_id")
+    if user_id is None:
+        return response
+
+    elapsed_ms = int((time.monotonic() - getattr(g, "_request_start", time.monotonic())) * 1000)
+    ApiLogStore.log(
+        user_id=user_id,
+        endpoint=request.path,
+        method=request.method,
+        query_params=request.query_string.decode("utf-8", errors="replace")[:500],
+        ip_address=request.remote_addr or "",
+        user_agent=(request.user_agent.string or "")[:200],
+        response_status=response.status_code,
+        response_time_ms=elapsed_ms,
+    )
+    return response
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -228,6 +261,64 @@ def reset_password():
         "message": "Password reset successfully",
         "token": new_token,
     })
+
+
+@api.route("/auth/rotate-key", methods=["POST"])
+@auth_required_strict
+def rotate_api_key():
+    new_key = generate_api_key()
+    with get_db() as db:
+        db.execute("UPDATE users SET api_key=%s WHERE id=%s", (new_key, g.user_id))
+    return jsonify({"api_key": new_key, "message": "API key rotated successfully"})
+
+
+@api.route("/auth/settings", methods=["PUT"])
+@auth_required_strict
+def update_user_settings():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+
+    if not username and not password:
+        return jsonify({"error": "Nothing to update"}), 400
+
+    with get_db() as db:
+        if username:
+            if len(username) < 3:
+                return jsonify({"error": "Username must be at least 3 characters"}), 400
+            existing = db.execute(
+                "SELECT id FROM users WHERE username=%s AND id!=%s", (username, g.user_id)
+            ).fetchone()
+            if existing:
+                return jsonify({"error": "Username already taken"}), 409
+            db.execute("UPDATE users SET username=%s WHERE id=%s", (username, g.user_id))
+
+        if password:
+            if len(password) < 8:
+                return jsonify({"error": "Password must be at least 8 characters"}), 400
+            db.execute(
+                "UPDATE users SET password_hash=%s WHERE id=%s",
+                (hash_password(password), g.user_id),
+            )
+
+        user = db.execute(
+            "SELECT id, email, username, tier, created_at, last_login, queries_today FROM users WHERE id=%s",
+            (g.user_id,),
+        ).fetchone()
+
+    return jsonify({"message": "Settings updated", "user": dict(user) if user else {}})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ACTIVITY LOG
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/activity")
+@auth_required_strict
+def list_activity():
+    page = request.args.get("page", 1, type=int)
+    per_page = min(request.args.get("per_page", 50, type=int), 200)
+    return jsonify(ApiLogStore.list_by_user(g.user_id, page, per_page))
 
 
 # ═══════════════════════════════════════════════════════════════════
