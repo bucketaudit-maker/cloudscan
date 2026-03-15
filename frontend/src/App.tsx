@@ -261,15 +261,6 @@ export default function App() {
             <h3 style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-display)',textAlign:'center',marginBottom:24,color:'var(--text-secondary)'}}>Analytics</h3>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
 
-              {/* Provider Distribution */}
-              {dashBreakdown?.provider_distribution && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
-                <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Providers</div>
-                {dashBreakdown.provider_distribution.filter((p:any)=>p.bucket_count>0).map((p:any)=>{const mx=Math.max(...dashBreakdown.provider_distribution.map((x:any)=>x.bucket_count));const pct=mx?(p.bucket_count/mx)*100:0;return <div key={p.name} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                  <span style={{width:70,fontSize:10,color:'var(--text-secondary)',fontWeight:600}}>{PL[p.name]||p.name}</span>
-                  <div style={{flex:1,background:'var(--bg-primary)',borderRadius:4,height:16,overflow:'hidden'}}><div style={{width:`${pct}%`,height:'100%',background:PC[p.name]?.bg||'var(--accent)',borderRadius:4,transition:'width 0.5s'}}/></div>
-                  <span style={{width:40,fontSize:10,color:'var(--text-muted)',textAlign:'right'}}>{fnum(p.bucket_count)}</span></div>})}
-              </div>}
-
               {/* Risk Distribution */}
               {dashBreakdown?.risk_distribution && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
                 <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Risk Levels</div>
