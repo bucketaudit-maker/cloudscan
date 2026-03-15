@@ -89,8 +89,11 @@ export default function App() {
   const [scanHistory,setScanHistory] = useState<any[]>([]); const [scanHistoryLoading,setScanHistoryLoading] = useState(false)
   const [showApiKey,setShowApiKey] = useState(false); const [settingsForm,setSettingsForm] = useState({username:'',password:'',confirmPassword:''}); const [settingsMsg,setSettingsMsg] = useState('')
   const [activity,setActivity] = useState<any>(null); const [activityPage,setActivityPage] = useState(1)
+  const [showWelcome,setShowWelcome] = useState(false); const [copiedKey,setCopiedKey] = useState(false)
+  const [onboarding,setOnboarding] = useState<{firstScan:boolean,firstSearch:boolean,firstMonitor:boolean,dismissed:boolean}>(()=>{ try{const s=localStorage.getItem('cs_onboarding');return s?JSON.parse(s):{firstScan:false,firstSearch:false,firstMonitor:false,dismissed:false}}catch{return{firstScan:false,firstSearch:false,firstMonitor:false,dismissed:false}} })
 
   useEffect(()=>{ document.documentElement.setAttribute('data-theme',theme); try{localStorage.setItem('cs_theme',theme)}catch{} },[theme])
+  useEffect(()=>{ try{localStorage.setItem('cs_onboarding',JSON.stringify(onboarding))}catch{} },[onboarding])
 
   useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d){setAiAvail(d.available||false);setAiProvider(d.active_provider||'');setAiProviders(d.providers||[])} }); apiFetch('/stats/timeline?days=30').then(d=>d&&setDashTimeline(d)); apiFetch('/stats/breakdown').then(d=>d&&setDashBreakdown(d)) }, [])
   useEffect(() => { if(_token) { apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }); apiFetch('/searches/saved').then(d=>{if(d?.items)setSavedSearches(d.items)}) } }, [])
@@ -108,7 +111,7 @@ export default function App() {
   useEffect(() => { const c = connectSSE(); return c }, [connectSSE])
 
   const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
-  const doRegister = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/register',{method:'POST',body:JSON.stringify(authForm)}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Registration failed');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
+  const doRegister = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/register',{method:'POST',body:JSON.stringify(authForm)}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Registration failed');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setShowWelcome(true); setView('home'); setAuthForm({email:'',username:'',password:''}) }
   const doLogout = () => { _token=null; try{localStorage.removeItem('cs_token')}catch{}; setUser(null); setView('home'); setAuthMode('login'); setAuthError(''); setAuthSuccess('') }
   const doForgotPassword = async() => {
     setAuthError(''); setAuthSuccess(''); setAuthLoading(true)
@@ -134,7 +137,7 @@ export default function App() {
   }
 
   const loadMonitor = async() => { setView('monitor'); const [wl,al,dash,wh] = await Promise.all([apiFetch('/monitor/watchlists'),apiFetch('/monitor/alerts'),apiFetch('/monitor/dashboard'),apiFetch('/monitor/webhooks')]); if(wl?.items)setWatchlists(wl.items); if(al)setAlerts(al); if(dash)setMonDash(dash); if(wh?.items)setWebhooks(wh.items) }
-  const createWatchlist = async() => { const kw=wlForm.keywords.split(',').map(s=>s.trim()).filter(Boolean); if(!wlForm.name||!kw.length)return; await apiFetch('/monitor/watchlists',{method:'POST',body:JSON.stringify({name:wlForm.name,keywords:kw,companies:wlForm.companies.split(',').map(s=>s.trim()).filter(Boolean),providers:wlForm.providers.length?wlForm.providers:undefined,scan_interval_hours:wlForm.interval})}); setWlForm({name:'',keywords:'',companies:'',providers:[],interval:24}); loadMonitor() }
+  const createWatchlist = async() => { const kw=wlForm.keywords.split(',').map(s=>s.trim()).filter(Boolean); if(!wlForm.name||!kw.length)return; await apiFetch('/monitor/watchlists',{method:'POST',body:JSON.stringify({name:wlForm.name,keywords:kw,companies:wlForm.companies.split(',').map(s=>s.trim()).filter(Boolean),providers:wlForm.providers.length?wlForm.providers:undefined,scan_interval_hours:wlForm.interval})}); setWlForm({name:'',keywords:'',companies:'',providers:[],interval:24}); loadMonitor(); setOnboarding(o=>({...o,firstMonitor:true})) }
   const triggerWlScan = async(id:number) => { await apiFetch(`/monitor/watchlists/${id}/scan`,{method:'POST'}); loadMonitor() }
   const deleteWl = async(id:number) => { await apiFetch(`/monitor/watchlists/${id}`,{method:'DELETE'}); loadMonitor() }
   const markAlertRead = async(id:number) => { await apiFetch(`/monitor/alerts/${id}/read`,{method:'POST'}); loadMonitor() }
@@ -147,7 +150,7 @@ export default function App() {
   const doDeleteSavedSearch = async(id:number) => { await apiFetch(`/searches/saved/${id}`,{method:'DELETE'}); const d=await apiFetch('/searches/saved'); if(d?.items)setSavedSearches(d.items) }
   const doPreview = async(fileId:number) => { if(previewFile===fileId){setPreviewFile(null);setPreviewData(null);return} setPreviewFile(fileId); setPreviewLoading(true); const d=await apiFetch(`/files/${fileId}/preview`); setPreviewData(d); setPreviewLoading(false) }
 
-  const doSearch = useCallback(async(q:string, f:any=sf, useRegex:boolean=regexMode) => { if(!q.trim())return; setSLoading(true); setView('search'); setSq(q); const p:any={...f}; if(useRegex){p.regex=q}else{p.q=q} Object.keys(p).forEach((k:string)=>!p[k]&&delete p[k]); const qs=new URLSearchParams(p).toString(); const d=await apiFetch(`/files?${qs}`); setSr(d||{items:[],total:0,page:1,per_page:50,query:q,response_time_ms:0}); setSLoading(false) },[sf,regexMode])
+  const doSearch = useCallback(async(q:string, f:any=sf, useRegex:boolean=regexMode) => { if(!q.trim())return; setSLoading(true); setView('search'); setSq(q); const p:any={...f}; if(useRegex){p.regex=q}else{p.q=q} Object.keys(p).forEach((k:string)=>!p[k]&&delete p[k]); const qs=new URLSearchParams(p).toString(); const d=await apiFetch(`/files?${qs}`); setSr(d||{items:[],total:0,page:1,per_page:50,query:q,response_time_ms:0}); setSLoading(false); setOnboarding(o=>({...o,firstSearch:true})) },[sf,regexMode])
   const loadBk = useCallback(async(f:any={}) => { const qs=new URLSearchParams(f).toString(); setBuckets(await apiFetch(`/buckets?${qs}`)||{items:[],total:0,page:1}); setView('buckets') },[])
   const loadBd = useCallback(async(id:number) => { setBd(await apiFetch(`/buckets/${id}`)||null); setView('bucket-detail') },[])
   const startScan = async() => {
@@ -157,7 +160,7 @@ export default function App() {
     const r=await apiFetch('/scans',{method:'POST',body:JSON.stringify(d)}); setScanStatus(r)
     if(r?.id){const pollId=setInterval(async()=>{const job=await apiFetch(`/scans/${r.id}`);if(!job)return;if(job.progress){try{setScanProgress(typeof job.progress==='string'?JSON.parse(job.progress):job.progress)}catch{}}
       setScanProgress((prev:any)=>({...prev,names_checked:job.names_checked||prev?.names_checked||0,buckets_found:job.buckets_found||prev?.buckets_found||0,buckets_open:job.buckets_open||prev?.buckets_open||0,files_indexed:job.files_indexed||prev?.files_indexed||0,phase:job.status==='completed'?'complete':job.status==='failed'?'failed':prev?.phase||'scanning'}))
-      if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d));loadScanHistory()}},2000)}
+      if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d));loadScanHistory();if(job.status==='completed')setOnboarding(o=>({...o,firstScan:true}))}},2000)}
   }
 
   // ── AI helper functions ──
@@ -182,6 +185,26 @@ export default function App() {
   // ═══════════════════════════════════════════════════════════════
   return (
     <div style={{minHeight:'100vh',background:'var(--bg-primary)',color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>
+      {/* ─── WELCOME MODAL ─── */}
+      {showWelcome && user && <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowWelcome(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{width:520,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:16,padding:40,textAlign:'center'}} className="fade-in">
+          <div style={{width:56,height:56,borderRadius:14,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:28,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900,marginBottom:16}}>☁</div>
+          <h2 style={{fontSize:24,fontWeight:700,fontFamily:'var(--font-display)',margin:'0 0 8px'}}>Welcome, <span style={{color:'var(--accent)'}}>{user.username}</span>!</h2>
+          <p style={{fontSize:13,color:'var(--text-tertiary)',margin:'0 0 28px'}}>Your CloudScan account is ready. Here's what you can do:</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:28}}>
+            {[['⟳','Scan','Discover exposed buckets across cloud providers'],['⌕','Search','Find sensitive files with full-text & regex search'],['◉','Monitor','Set up watchlists for continuous monitoring'],['✦','AI','Get AI-powered security insights']].map(([ic,t,d]:any)=>
+              <div key={t} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:16,textAlign:'left'}}>
+                <div style={{fontSize:20,marginBottom:6}}>{ic}</div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--text-primary)',marginBottom:4}}>{t}</div>
+                <div style={{fontSize:11,color:'var(--text-muted)',lineHeight:1.4}}>{d}</div></div>)}</div>
+          {user.api_key && <div style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:16,marginBottom:24,textAlign:'left'}}>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:6,textTransform:'uppercase' as const,letterSpacing:'1px'}}>YOUR API KEY</div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <code style={{flex:1,fontSize:11,color:'var(--accent)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const,fontFamily:'var(--font-mono)'}}>{user.api_key}</code>
+              <button onClick={()=>{navigator.clipboard.writeText(user.api_key);setCopiedKey(true);setTimeout(()=>setCopiedKey(false),2000)}} style={{background:copiedKey?'var(--accent-bg)':'var(--bg-secondary)',border:`1px solid ${copiedKey?'rgba(0,232,123,0.3)':'var(--border-subtle)'}`,color:copiedKey?'var(--accent)':'var(--text-secondary)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>{copiedKey?'Copied!':'Copy'}</button></div></div>}
+          <button onClick={()=>setShowWelcome(false)} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:10,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'var(--font-mono)'}}>Get Started</button>
+        </div></div>}
+
       {/* ─── NAV ─── */}
       <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-default)',backdropFilter:'blur(20px)',padding:'0 24px',height:56,display:'flex',alignItems:'center',gap:24}}>
         <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
@@ -190,19 +213,19 @@ export default function App() {
         <div style={{display:'flex',gap:4}}>
           {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
             <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
-              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-tertiary)',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>
+              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>
               <span style={{marginRight:5,fontSize:11}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:5}}>{monDash.unread_alerts}</span>:null}
             </button>))}</div>
         <div style={{flex:1}}/>
         <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontSize:14,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
         {sseConnected && <div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--accent)'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',animation:'pulse 2s infinite'}}/>LIVE</div>}
-        {stats && <div style={{display:'flex',gap:20,fontSize:11,color:'var(--text-muted)'}}><span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
+        {stats && <div style={{display:'flex',gap:20,fontSize:11,color:'var(--text-tertiary)'}}><span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
         {user ? <div style={{display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:11,color:'var(--text-secondary)'}}>{user.username}</span>
           <span style={{fontSize:9,background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'1px 6px',borderRadius:3,textTransform:'uppercase' as const}}>{user.tier}</span>
-          <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)})}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
-          <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11}}>Logout</button>
+          <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)})}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
+          <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11}}>Logout</button>
         </div> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'6px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Sign In</button>}
       </nav>
 
@@ -271,8 +294,31 @@ export default function App() {
               <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search files... (.env, backup.sql, credentials)" style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:15,padding:'16px 0',fontFamily:'var(--font-mono)'}}/>
               <button onClick={()=>doSearch(heroQ)} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',padding:'0 28px',cursor:'pointer',color:'#000',fontWeight:700,fontSize:13,fontFamily:'var(--font-mono)'}}>SEARCH</button></div></div>
           <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>{['.env','backup.sql','credentials.json','id_rsa','terraform.tfstate','.key','*.csv'].map(q=><button key={q} onClick={()=>{setHeroQ(q);doSearch(q)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'5px 12px',color:'var(--text-tertiary)',fontSize:12,cursor:'pointer',fontFamily:'var(--font-mono)'}}>{q}</button>)}</div>
+          {user && <div style={{marginTop:20,textAlign:'center'}}>
+            <button onClick={()=>{setScanForm({keywords:'backup, staging, dev, test, config',companies:'example',providers:[]});setView('scan');loadScanHistory()}} style={{background:'var(--bg-secondary)',border:'1px solid var(--accent)',borderRadius:10,padding:'12px 28px',cursor:'pointer',color:'var(--accent)',fontSize:13,fontWeight:700,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>⟳ Try a Demo Scan</button>
+            <p style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>Pre-filled with common keywords to discover exposed buckets</p></div>}
           {stats?.top_extensions && <div style={{marginTop:64,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(85px,1fr))',gap:8,maxWidth:550,margin:'64px auto 0'}}>{stats.top_extensions.slice(0,12).map((e:any)=><div key={e.extension} onClick={()=>doSearch(`*.${e.extension}`)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:8,cursor:'pointer',textAlign:'center'}}>
             <span style={{fontSize:16}}>{EI[e.extension]||'📄'}</span><div style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>.{e.extension}</div><div style={{fontSize:10,color:'var(--text-muted)'}}>{fnum(e.count)}</div></div>)}</div>}
+
+          {/* Onboarding Checklist */}
+          {user && !onboarding.dismissed && <div style={{marginTop:40,maxWidth:600,margin:'40px auto 0',background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,textAlign:'left'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <div><div style={{fontSize:14,fontWeight:700,fontFamily:'var(--font-display)',color:'var(--text-primary)'}}>Getting Started</div>
+                <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{[true,onboarding.firstScan,onboarding.firstSearch,onboarding.firstMonitor].filter(Boolean).length}/4 complete</div></div>
+              <button onClick={()=>setOnboarding(o=>({...o,dismissed:true}))} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:14,padding:4}}>✕</button></div>
+            <div style={{background:'var(--bg-primary)',borderRadius:4,height:4,marginBottom:16,overflow:'hidden'}}><div style={{height:'100%',background:'linear-gradient(90deg,var(--accent),#00c568)',borderRadius:4,width:`${[true,onboarding.firstScan,onboarding.firstSearch,onboarding.firstMonitor].filter(Boolean).length*25}%`,transition:'width 0.5s'}}/></div>
+            {([
+              [true,'Registered','Create your CloudScan account',null],
+              [onboarding.firstScan,'First Scan','Run a discovery scan to find exposed buckets',()=>{setScanForm({keywords:'backup, staging, dev, test',companies:'example',providers:[]});setView('scan');loadScanHistory()}],
+              [onboarding.firstSearch,'First Search','Search for exposed files in the database',()=>{setView('search');setTimeout(()=>ref.current?.focus(),100)}],
+              [onboarding.firstMonitor,'Set Up Monitoring','Create a watchlist for continuous monitoring',()=>loadMonitor()]
+            ] as [boolean,string,string,(()=>void)|null][]).map(([done,title,desc,action])=>
+              <div key={title} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                <div style={{width:22,height:22,borderRadius:'50%',border:`2px solid ${done?'var(--accent)':'var(--border-default)'}`,background:done?'var(--accent)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,color:done?'#000':'transparent',flexShrink:0}}>{done?'✓':''}</div>
+                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:done?'var(--text-tertiary)':'var(--text-primary)',textDecoration:done?'line-through':'none'}}>{title}</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>{desc}</div></div>
+                {!done&&action&&<button onClick={action} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>Start</button>}
+              </div>)}</div>}
 
           {/* Dashboard Analytics */}
           {(dashBreakdown || dashTimeline) && <div style={{marginTop:64,maxWidth:900,margin:'64px auto 0'}}>
@@ -548,6 +594,7 @@ export default function App() {
           <div style={{display:'flex',alignItems:'center',gap:12}}>
             <div style={{flex:1,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',fontFamily:'var(--font-mono)',fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{showApiKey?user.api_key:'cs_••••••••••••••••••••••••••••••'}</div>
             <button onClick={()=>setShowApiKey(!showApiKey)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>{showApiKey?'Hide':'Show'}</button>
+            <button onClick={()=>{navigator.clipboard.writeText(user.api_key);setCopiedKey(true);setTimeout(()=>setCopiedKey(false),2000)}} style={{background:copiedKey?'var(--accent-bg)':'var(--bg-primary)',border:`1px solid ${copiedKey?'rgba(0,232,123,0.3)':'var(--border-subtle)'}`,color:copiedKey?'var(--accent)':'var(--text-muted)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11,transition:'all 0.2s'}}>{copiedKey?'Copied!':'Copy'}</button>
             <button onClick={rotateApiKey} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--warning)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>Rotate</button>
           </div>
         </div>
