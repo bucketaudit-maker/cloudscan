@@ -183,7 +183,7 @@ export default function App() {
   return (
     <div style={{minHeight:'100vh',background:'var(--bg-primary)',color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>
       {/* ─── NAV ─── */}
-      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'linear-gradient(180deg,var(--bg-primary),rgba(6,10,16,0.92))',borderBottom:'1px solid var(--border-subtle)',backdropFilter:'blur(20px)',padding:'0 24px',height:56,display:'flex',alignItems:'center',gap:24}}>
+      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-default)',backdropFilter:'blur(20px)',padding:'0 24px',height:56,display:'flex',alignItems:'center',gap:24}}>
         <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
           <div style={{width:28,height:28,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:17,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
