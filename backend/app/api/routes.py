@@ -18,6 +18,7 @@ from backend.app.models.database import (
     OrgStore, NotificationStore, NotificationPrefStore, SlackConfigStore,
     ReportStore, ReportScheduleStore, IntegrationStore, ComplianceStore,
     RemediationStore, seed_compliance_frameworks,
+    TagStore, BookmarkStore, ScanScheduleStore, AuditLogStore,
 )
 from backend.app.utils.auth import (
     auth_required, auth_required_strict, rate_limit,
@@ -272,6 +273,10 @@ def rotate_api_key():
     new_key = generate_api_key()
     with get_db() as db:
         db.execute("UPDATE users SET api_key=%s WHERE id=%s", (new_key, g.user_id))
+    try:
+        AuditLogStore.log(g.user_id, "rotate_api_key", "user", g.user_id, None, request.remote_addr)
+    except:
+        pass
     return jsonify({"api_key": new_key, "message": "API key rotated successfully"})
 
 
@@ -309,6 +314,10 @@ def update_user_settings():
             (g.user_id,),
         ).fetchone()
 
+    try:
+        AuditLogStore.log(g.user_id, "update_settings", "user", g.user_id, {"username_changed": bool(username), "password_changed": bool(password)}, request.remote_addr)
+    except:
+        pass
     return jsonify({"message": "Settings updated", "user": dict(user) if user else {}})
 
 
@@ -344,6 +353,8 @@ def search_files():
     per_page = min(request.args.get("per_page", 50, type=int), 200)
     min_size = request.args.get("min_size", type=int)
     max_size = request.args.get("max_size", type=int)
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
     regex = request.args.get("regex", "").strip()
 
     if regex:
@@ -362,6 +373,7 @@ def search_files():
         provider=provider, bucket_name=bucket,
         sort=sort, page=page, per_page=per_page,
         regex=regex or None,
+        date_from=date_from, date_to=date_to,
     )
     results["response_time_ms"] = int((time.monotonic() - start) * 1000)
     return jsonify(results)
@@ -566,12 +578,15 @@ def stats_breakdown():
 @auth_required
 @rate_limit
 def list_buckets():
+    tag_id = request.args.get("tag_id", type=int)
     return jsonify(BucketStore.list_all(
         provider=request.args.get("provider"),
         status=request.args.get("status"),
         search=request.args.get("search"),
         page=request.args.get("page", 1, type=int),
         per_page=min(request.args.get("per_page", 50, type=int), 200),
+        tag_id=tag_id,
+        tag_user_id=g.get("user_id") if tag_id else None,
     ))
 
 
@@ -774,6 +789,10 @@ def create_watchlist():
     wl = WatchlistStore.create(
         g.user_id, name, keywords, companies, providers, interval
     )
+    try:
+        AuditLogStore.log(g.user_id, "create_watchlist", "watchlist", wl.get("id"), {"name": name}, request.remote_addr)
+    except:
+        pass
     return jsonify(wl), 201
 
 
@@ -807,6 +826,10 @@ def update_watchlist(wl_id):
             updates[k] = json.dumps(v) if isinstance(v, (list, dict)) else v
     if updates:
         WatchlistStore.update(wl_id, **updates)
+    try:
+        AuditLogStore.log(g.user_id, "update_watchlist", "watchlist", wl_id, updates, request.remote_addr)
+    except:
+        pass
     return jsonify(WatchlistStore.get(wl_id))
 
 
@@ -817,6 +840,10 @@ def delete_watchlist(wl_id):
     if err:
         return err[0], err[1]
     WatchlistStore.delete(wl_id)
+    try:
+        AuditLogStore.log(g.user_id, "delete_watchlist", "watchlist", wl_id, None, request.remote_addr)
+    except:
+        pass
     return jsonify({"message": "Deleted"})
 
 
@@ -892,6 +919,10 @@ def create_webhook():
         return jsonify({"error": "url must start with http:// or https://"}), 400
 
     wh = WebhookStore.create(g.user_id, name, url, secret, event_types)
+    try:
+        AuditLogStore.log(g.user_id, "create_webhook", "webhook", wh.get("id"), {"name": name, "url": url}, request.remote_addr)
+    except:
+        pass
     return jsonify(wh), 201
 
 
@@ -908,6 +939,10 @@ def update_webhook(wh_id):
         return jsonify({"error": "Webhook not found"}), 404
     data = request.get_json(silent=True) or {}
     WebhookStore.update(wh_id, g.user_id, **data)
+    try:
+        AuditLogStore.log(g.user_id, "update_webhook", "webhook", wh_id, data, request.remote_addr)
+    except:
+        pass
     return jsonify(WebhookStore.get(wh_id, g.user_id))
 
 
@@ -916,6 +951,10 @@ def update_webhook(wh_id):
 def delete_webhook(wh_id):
     if not WebhookStore.delete(wh_id, g.user_id):
         return jsonify({"error": "Webhook not found"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "delete_webhook", "webhook", wh_id, None, request.remote_addr)
+    except:
+        pass
     return jsonify({"message": "Deleted"})
 
 
@@ -1157,6 +1196,10 @@ def create_org():
     if OrgStore.get_by_slug(slug):
         return jsonify({"error": "Slug already taken"}), 409
     org = OrgStore.create(g.user_id, name, slug)
+    try:
+        AuditLogStore.log(g.user_id, "create_org", "organization", org.get("id"), {"name": name, "slug": slug}, request.remote_addr)
+    except:
+        pass
     return jsonify(org), 201
 
 @api.route("/orgs", methods=["GET"])
@@ -1191,6 +1234,10 @@ def update_org(org_id):
         if updates:
             params.append(org_id)
             db.execute(f"UPDATE organizations SET {','.join(updates)} WHERE id=%s", tuple(params))
+    try:
+        AuditLogStore.log(g.user_id, "update_org", "organization", org_id, data, request.remote_addr)
+    except:
+        pass
     return jsonify(OrgStore.get(org_id))
 
 @api.route("/orgs/<int:org_id>/invite", methods=["POST"])
@@ -1204,6 +1251,10 @@ def invite_to_org(org_id):
     if not email:
         return jsonify({"error": "email required"}), 400
     invite = OrgStore.create_invite(org_id, email, role, g.user_id)
+    try:
+        AuditLogStore.log(g.user_id, "invite_to_org", "organization", org_id, {"email": email, "role": role}, request.remote_addr)
+    except:
+        pass
     return jsonify(invite), 201
 
 @api.route("/orgs/accept-invite", methods=["POST"])
@@ -1225,6 +1276,10 @@ def remove_org_member(org_id, uid):
         return jsonify({"error": "Admin access required"}), 403
     if not OrgStore.remove_member(org_id, uid):
         return jsonify({"error": "Cannot remove owner or member not found"}), 400
+    try:
+        AuditLogStore.log(g.user_id, "remove_org_member", "organization", org_id, {"removed_user_id": uid}, request.remote_addr)
+    except:
+        pass
     return jsonify({"ok": True})
 
 @api.route("/orgs/<int:org_id>/members/<int:uid>", methods=["PUT"])
@@ -1237,6 +1292,10 @@ def update_org_member_role(org_id, uid):
     if role not in ("viewer", "member", "admin"):
         return jsonify({"error": "Invalid role"}), 400
     OrgStore.update_role(org_id, uid, role)
+    try:
+        AuditLogStore.log(g.user_id, "update_org_member_role", "organization", org_id, {"user_id": uid, "role": role}, request.remote_addr)
+    except:
+        pass
     return jsonify({"ok": True})
 
 @api.route("/orgs/<int:org_id>/switch", methods=["POST"])
@@ -1449,6 +1508,10 @@ def create_integration():
     if int_type not in ("slack", "jira"):
         return jsonify({"error": "type must be slack or jira"}), 400
     integration = IntegrationStore.create(g.user_id, int_type, name, config)
+    try:
+        AuditLogStore.log(g.user_id, "create_integration", "integration", integration.get("id"), {"type": int_type, "name": name}, request.remote_addr)
+    except:
+        pass
     return jsonify(integration), 201
 
 @api.route("/integrations", methods=["GET"])
@@ -1470,6 +1533,10 @@ def get_integration(iid):
 def update_integration(iid):
     data = request.get_json(silent=True) or {}
     IntegrationStore.update(iid, g.user_id, **data)
+    try:
+        AuditLogStore.log(g.user_id, "update_integration", "integration", iid, data, request.remote_addr)
+    except:
+        pass
     integration = IntegrationStore.get(iid, g.user_id)
     return jsonify(integration)
 
@@ -1477,6 +1544,10 @@ def update_integration(iid):
 @auth_required_strict
 def delete_integration(iid):
     IntegrationStore.delete(iid, g.user_id)
+    try:
+        AuditLogStore.log(g.user_id, "delete_integration", "integration", iid, None, request.remote_addr)
+    except:
+        pass
     return jsonify({"ok": True})
 
 @api.route("/integrations/<int:iid>/test", methods=["POST"])
@@ -1679,6 +1750,373 @@ def create_remediation_from_alert(alert_id):
         due_date=data.get("due_date"),
     )
     return jsonify(rem), 201
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TAGS
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/tags", methods=["POST"])
+@auth_required_strict
+def create_tag():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "Name required"}), 400
+    tag = TagStore.create(g.user_id, name, data.get("color", "#6b7280"))
+    try:
+        AuditLogStore.log(g.user_id, "create_tag", "tag", tag.get("id"), {"name": name}, request.remote_addr)
+    except:
+        pass
+    return jsonify(tag), 201
+
+
+@api.route("/tags", methods=["GET"])
+@auth_required_strict
+def list_tags():
+    return jsonify({"items": TagStore.list_by_user(g.user_id)})
+
+
+@api.route("/tags/<int:tag_id>", methods=["PUT"])
+@auth_required_strict
+def update_tag(tag_id):
+    data = request.get_json(silent=True) or {}
+    if not TagStore.update(tag_id, g.user_id, **data):
+        return jsonify({"error": "Tag not found or nothing to update"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "update_tag", "tag", tag_id, data, request.remote_addr)
+    except:
+        pass
+    return jsonify({"ok": True})
+
+
+@api.route("/tags/<int:tag_id>", methods=["DELETE"])
+@auth_required_strict
+def delete_tag(tag_id):
+    if not TagStore.delete(tag_id, g.user_id):
+        return jsonify({"error": "Tag not found"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "delete_tag", "tag", tag_id, None, request.remote_addr)
+    except:
+        pass
+    return jsonify({"message": "Deleted"})
+
+
+@api.route("/buckets/<int:bucket_id>/tags", methods=["POST"])
+@auth_required_strict
+def tag_bucket(bucket_id):
+    data = request.get_json(silent=True) or {}
+    tag_id = data.get("tag_id")
+    if not tag_id:
+        return jsonify({"error": "tag_id required"}), 400
+    TagStore.tag_bucket(g.user_id, bucket_id, tag_id)
+    try:
+        AuditLogStore.log(g.user_id, "tag_bucket", "bucket", bucket_id, {"tag_id": tag_id}, request.remote_addr)
+    except:
+        pass
+    return jsonify({"ok": True}), 201
+
+
+@api.route("/buckets/<int:bucket_id>/tags/<int:tag_id>", methods=["DELETE"])
+@auth_required_strict
+def untag_bucket(bucket_id, tag_id):
+    TagStore.untag_bucket(g.user_id, bucket_id, tag_id)
+    return jsonify({"ok": True})
+
+
+@api.route("/buckets/<int:bucket_id>/tags", methods=["GET"])
+@auth_required_strict
+def get_bucket_tags(bucket_id):
+    tags = TagStore.get_bucket_tags(bucket_id, g.user_id)
+    return jsonify({"items": tags})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BOOKMARKS
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/bookmarks", methods=["POST"])
+@auth_required_strict
+def toggle_bookmark():
+    data = request.get_json(silent=True) or {}
+    result = BookmarkStore.toggle(
+        g.user_id,
+        bucket_id=data.get("bucket_id"),
+        file_id=data.get("file_id"),
+        note=data.get("note"),
+    )
+    if "error" in result:
+        return jsonify(result), 400
+    try:
+        AuditLogStore.log(g.user_id, "toggle_bookmark", "bookmark", None, data, request.remote_addr)
+    except:
+        pass
+    return jsonify(result)
+
+
+@api.route("/bookmarks", methods=["GET"])
+@auth_required_strict
+def list_bookmarks():
+    bm_type = request.args.get("type", "all")
+    page = request.args.get("page", 1, type=int)
+    per_page = min(request.args.get("per_page", 50, type=int), 200)
+    return jsonify(BookmarkStore.list_by_user(g.user_id, bm_type=bm_type, page=page, per_page=per_page))
+
+
+@api.route("/bookmarks/check", methods=["GET"])
+@auth_required_strict
+def check_bookmark():
+    bucket_id = request.args.get("bucket_id", type=int)
+    file_id = request.args.get("file_id", type=int)
+    return jsonify({"bookmarked": BookmarkStore.is_bookmarked(g.user_id, bucket_id=bucket_id, file_id=file_id)})
+
+
+@api.route("/bookmarks/ids", methods=["GET"])
+@auth_required_strict
+def bookmark_ids():
+    return jsonify({"bucket_ids": BookmarkStore.get_bucket_bookmark_ids(g.user_id)})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SCAN SCHEDULES
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/scans/schedules", methods=["POST"])
+@auth_required_strict
+def create_scan_schedule():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    keywords = data.get("keywords", [])
+    if not name:
+        return jsonify({"error": "Name required"}), 400
+    if not keywords:
+        return jsonify({"error": "At least one keyword required"}), 400
+    frequency = data.get("frequency", "daily")
+    if frequency not in ("hourly", "daily", "weekly", "monthly"):
+        return jsonify({"error": "Invalid frequency"}), 400
+    schedule = ScanScheduleStore.create(
+        user_id=g.user_id,
+        name=name,
+        keywords=keywords,
+        companies=data.get("companies"),
+        providers=data.get("providers"),
+        frequency=frequency,
+        config=data.get("config"),
+    )
+    try:
+        AuditLogStore.log(g.user_id, "create_scan_schedule", "scan_schedule", schedule.get("id"), {"name": name}, request.remote_addr)
+    except:
+        pass
+    return jsonify(schedule), 201
+
+
+@api.route("/scans/schedules", methods=["GET"])
+@auth_required_strict
+def list_scan_schedules():
+    return jsonify({"items": ScanScheduleStore.list_by_user(g.user_id)})
+
+
+@api.route("/scans/schedules/<int:sid>", methods=["GET"])
+@auth_required_strict
+def get_scan_schedule(sid):
+    schedule = ScanScheduleStore.get(sid, g.user_id)
+    if not schedule:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(schedule)
+
+
+@api.route("/scans/schedules/<int:sid>", methods=["PUT"])
+@auth_required_strict
+def update_scan_schedule(sid):
+    data = request.get_json(silent=True) or {}
+    if not ScanScheduleStore.update(sid, g.user_id, **data):
+        return jsonify({"error": "Not found or nothing to update"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "update_scan_schedule", "scan_schedule", sid, data, request.remote_addr)
+    except:
+        pass
+    return jsonify(ScanScheduleStore.get(sid, g.user_id))
+
+
+@api.route("/scans/schedules/<int:sid>", methods=["DELETE"])
+@auth_required_strict
+def delete_scan_schedule(sid):
+    if not ScanScheduleStore.delete(sid, g.user_id):
+        return jsonify({"error": "Not found"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "delete_scan_schedule", "scan_schedule", sid, None, request.remote_addr)
+    except:
+        pass
+    return jsonify({"message": "Deleted"})
+
+
+@api.route("/scans/schedules/<int:sid>/toggle", methods=["POST"])
+@auth_required_strict
+def toggle_scan_schedule(sid):
+    schedule = ScanScheduleStore.get(sid, g.user_id)
+    if not schedule:
+        return jsonify({"error": "Not found"}), 404
+    new_active = not schedule.get("is_active", True)
+    ScanScheduleStore.update(sid, g.user_id, is_active=new_active)
+    try:
+        AuditLogStore.log(g.user_id, "toggle_scan_schedule", "scan_schedule", sid, {"is_active": new_active}, request.remote_addr)
+    except:
+        pass
+    return jsonify({"message": "Toggled", "is_active": new_active})
+
+
+@api.route("/scans/schedules/<int:sid>/run", methods=["POST"])
+@auth_required_strict
+def run_scan_schedule(sid):
+    schedule = ScanScheduleStore.get(sid, g.user_id)
+    if not schedule:
+        return jsonify({"error": "Not found"}), 404
+    keywords = json.loads(schedule["keywords"]) if isinstance(schedule["keywords"], str) else schedule["keywords"]
+    companies = json.loads(schedule["companies"]) if isinstance(schedule.get("companies", "[]"), str) else schedule.get("companies", [])
+    providers = json.loads(schedule["providers"]) if isinstance(schedule.get("providers", "[]"), str) else schedule.get("providers", [])
+    job = scan_service.start_discovery(
+        keywords=keywords,
+        companies=companies,
+        providers=providers if providers else None,
+        created_by=g.user_id,
+    )
+    ScanScheduleStore.mark_run(sid, job.get("id"), schedule.get("frequency", "daily"))
+    try:
+        AuditLogStore.log(g.user_id, "run_scan_schedule", "scan_schedule", sid, {"job_id": job.get("id")}, request.remote_addr)
+    except:
+        pass
+    return jsonify(job), 202
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BULK OPERATIONS
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/monitor/alerts/bulk-resolve", methods=["POST"])
+@auth_required_strict
+def bulk_resolve_alerts():
+    data = request.get_json(silent=True) or {}
+    alert_ids = data.get("alert_ids", [])
+    if not alert_ids:
+        return jsonify({"error": "alert_ids required"}), 400
+    resolved = 0
+    for aid in alert_ids:
+        try:
+            AlertStore.resolve(aid, g.user_id)
+            resolved += 1
+        except:
+            pass
+    try:
+        AuditLogStore.log(g.user_id, "bulk_resolve_alerts", "alert", None, {"count": resolved, "ids": alert_ids}, request.remote_addr)
+    except:
+        pass
+    return jsonify({"resolved": resolved, "total": len(alert_ids)})
+
+
+@api.route("/monitor/alerts/bulk-read", methods=["POST"])
+@auth_required_strict
+def bulk_read_alerts():
+    data = request.get_json(silent=True) or {}
+    alert_ids = data.get("alert_ids", [])
+    if not alert_ids:
+        return jsonify({"error": "alert_ids required"}), 400
+    marked = 0
+    for aid in alert_ids:
+        try:
+            AlertStore.mark_read(aid, g.user_id)
+            marked += 1
+        except:
+            pass
+    return jsonify({"marked_read": marked, "total": len(alert_ids)})
+
+
+@api.route("/remediations/bulk-status", methods=["POST"])
+@auth_required_strict
+def bulk_update_remediation_status():
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids", [])
+    status = data.get("status")
+    if not ids or not status:
+        return jsonify({"error": "ids and status required"}), 400
+    if status not in ("open", "in_progress", "verified", "closed"):
+        return jsonify({"error": "Invalid status"}), 400
+    updated = 0
+    for rid in ids:
+        try:
+            if RemediationStore.update_status(rid, g.user_id, status):
+                updated += 1
+        except:
+            pass
+    try:
+        AuditLogStore.log(g.user_id, "bulk_update_remediation_status", "remediation", None, {"count": updated, "status": status}, request.remote_addr)
+    except:
+        pass
+    return jsonify({"updated": updated, "total": len(ids)})
+
+
+@api.route("/remediations/bulk-assign", methods=["POST"])
+@auth_required_strict
+def bulk_assign_remediations():
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids", [])
+    assigned_to = data.get("assigned_to")
+    if not ids or not assigned_to:
+        return jsonify({"error": "ids and assigned_to required"}), 400
+    updated = 0
+    for rid in ids:
+        try:
+            if RemediationStore.assign(rid, g.user_id, assigned_to):
+                updated += 1
+        except:
+            pass
+    try:
+        AuditLogStore.log(g.user_id, "bulk_assign_remediations", "remediation", None, {"count": updated, "assigned_to": assigned_to}, request.remote_addr)
+    except:
+        pass
+    return jsonify({"assigned": updated, "total": len(ids)})
+
+
+@api.route("/remediations/bulk-close", methods=["POST"])
+@auth_required_strict
+def bulk_close_remediations():
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids", [])
+    if not ids:
+        return jsonify({"error": "ids required"}), 400
+    closed = 0
+    for rid in ids:
+        try:
+            if RemediationStore.update_status(rid, g.user_id, "closed"):
+                closed += 1
+        except:
+            pass
+    try:
+        AuditLogStore.log(g.user_id, "bulk_close_remediations", "remediation", None, {"count": closed}, request.remote_addr)
+    except:
+        pass
+    return jsonify({"closed": closed, "total": len(ids)})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# AUDIT TRAIL
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/audit-log", methods=["GET"])
+@auth_required_strict
+def list_audit_log():
+    page = request.args.get("page", 1, type=int)
+    per_page = min(request.args.get("per_page", 50, type=int), 200)
+    action = request.args.get("action")
+    entity_type = request.args.get("entity_type")
+    return jsonify(AuditLogStore.list_by_user(g.user_id, action=action, entity_type=entity_type, page=page, per_page=per_page))
+
+
+@api.route("/audit-log/entity/<entity_type>/<int:entity_id>", methods=["GET"])
+@auth_required_strict
+def get_entity_audit_log(entity_type, entity_id):
+    page = request.args.get("page", 1, type=int)
+    per_page = min(request.args.get("per_page", 50, type=int), 200)
+    return jsonify(AuditLogStore.list_by_entity(entity_type, entity_id, page=page, per_page=per_page))
 
 
 # ═══════════════════════════════════════════════════════════════════

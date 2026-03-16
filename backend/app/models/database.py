@@ -438,6 +438,73 @@ CREATE INDEX IF NOT EXISTS idx_remediations_bucket ON remediations(bucket_id);
 CREATE INDEX IF NOT EXISTS idx_remediations_assigned ON remediations(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_remediations_status ON remediations(status);
 CREATE INDEX IF NOT EXISTS idx_remediations_org ON remediations(org_id);
+
+-- ═══ Sprint 5: Tags, Bookmarks, Scan Schedules, Audit Log ═══
+
+CREATE TABLE IF NOT EXISTS tags (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    color       TEXT DEFAULT '#6b7280',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE(user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS bucket_tags (
+    id          INTEGER PRIMARY KEY,
+    bucket_id   INTEGER NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE(bucket_id, tag_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    bucket_id   INTEGER REFERENCES buckets(id) ON DELETE CASCADE,
+    file_id     INTEGER,
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS scan_schedules (
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    keywords        TEXT NOT NULL DEFAULT '[]',
+    companies       TEXT DEFAULT '[]',
+    providers       TEXT DEFAULT '[]',
+    frequency       TEXT NOT NULL DEFAULT 'daily' CHECK(frequency IN ('hourly','daily','weekly','monthly')),
+    cron_expr       TEXT,
+    is_active       BOOLEAN DEFAULT TRUE,
+    last_run_at     TEXT,
+    next_run_at     TEXT,
+    last_job_id     INTEGER REFERENCES scan_jobs(id),
+    config          TEXT DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action          TEXT NOT NULL,
+    entity_type     TEXT,
+    entity_id       INTEGER,
+    details         TEXT,
+    ip_address      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Sprint 5 indexes
+CREATE INDEX IF NOT EXISTS idx_bucket_tags_bucket ON bucket_tags(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_bucket_tags_tag ON bucket_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);
+CREATE INDEX IF NOT EXISTS idx_scan_schedules_user ON scan_schedules(user_id);
+CREATE INDEX IF NOT EXISTS idx_scan_schedules_next ON scan_schedules(next_run_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
 """
 
 SEED_PROVIDERS = [
@@ -559,11 +626,17 @@ class BucketStore:
 
     @staticmethod
     def list_all(provider: str = None, status: str = None, search: str = None,
-                 page: int = 1, per_page: int = 50) -> dict:
+                 page: int = 1, per_page: int = 50, tag_id: int = None, tag_user_id: int = None) -> dict:
         with get_db() as db:
             q = """SELECT b.*, p.name as provider_name, p.display_name as provider_display
-                   FROM buckets b JOIN providers p ON b.provider_id=p.id WHERE 1=1"""
+                   FROM buckets b JOIN providers p ON b.provider_id=p.id"""
             params = []
+            if tag_id:
+                q += " JOIN bucket_tags bt ON bt.bucket_id=b.id"
+                q += " WHERE bt.tag_id=%s AND bt.user_id=%s"
+                params.extend([tag_id, tag_user_id])
+            else:
+                q += " WHERE 1=1"
             if provider:
                 q += " AND p.name=%s"; params.append(provider)
             if status:
@@ -635,7 +708,8 @@ class FileStore:
     def search(query: str = "", extensions: list = None, exclude_extensions: list = None,
                min_size: int = None, max_size: int = None, provider: str = None,
                bucket_name: str = None, sort: str = "relevance",
-               page: int = 1, per_page: int = 50, regex: str = None) -> dict:
+               page: int = 1, per_page: int = 50, regex: str = None,
+               date_from: str = None, date_to: str = None) -> dict:
         import re
         with get_db() as db:
             base = """
@@ -692,6 +766,10 @@ class FileStore:
                 wheres.append("p.name = %s"); params.append(provider)
             if bucket_name:
                 wheres.append("b.name LIKE %s"); params.append(f"%{bucket_name}%")
+            if date_from:
+                wheres.append("f.last_modified >= %s"); params.append(date_from)
+            if date_to:
+                wheres.append("f.last_modified <= %s"); params.append(date_to)
 
             if wheres:
                 base += " WHERE " + " AND ".join(wheres)
@@ -2257,3 +2335,341 @@ def seed_compliance_frameworks():
                         (fw_id, ctrl["id"], ctrl["name"], ctrl["check_type"], json.dumps(ctrl.get("config", {})), ctrl.get("severity", "medium")),
                     )
     logger.info("Compliance frameworks seeded")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — TAGS
+# ═══════════════════════════════════════════════════════════════════
+
+class TagStore:
+    @staticmethod
+    def create(user_id, name, color='#6b7280'):
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute(
+                "INSERT INTO tags (user_id, name, color, created_at) VALUES (%s, %s, %s, %s)",
+                (user_id, name, color, now),
+            )
+            row = db.execute("SELECT * FROM tags WHERE id=%s", (db.lastrowid,)).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_by_user(user_id):
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM tags WHERE user_id=%s ORDER BY name",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def update(tag_id, user_id, **kwargs):
+        allowed = {"name", "color"}
+        updates, params = [], []
+        for k, v in kwargs.items():
+            if k in allowed and v is not None:
+                updates.append(f"{k}=%s")
+                params.append(v)
+        if not updates:
+            return False
+        params.extend([tag_id, user_id])
+        with get_db() as db:
+            db.execute(
+                f"UPDATE tags SET {','.join(updates)} WHERE id=%s AND user_id=%s",
+                tuple(params),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def delete(tag_id, user_id):
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM tags WHERE id=%s AND user_id=%s",
+                (tag_id, user_id),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def tag_bucket(user_id, bucket_id, tag_id):
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            if settings.is_postgres:
+                db.execute(
+                    "INSERT INTO bucket_tags (bucket_id, tag_id, user_id, created_at) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                    (bucket_id, tag_id, user_id, now),
+                )
+            else:
+                db.execute(
+                    "INSERT OR IGNORE INTO bucket_tags (bucket_id, tag_id, user_id, created_at) VALUES (%s, %s, %s, %s)",
+                    (bucket_id, tag_id, user_id, now),
+                )
+
+    @staticmethod
+    def untag_bucket(user_id, bucket_id, tag_id):
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM bucket_tags WHERE bucket_id=%s AND tag_id=%s AND user_id=%s",
+                (bucket_id, tag_id, user_id),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def get_bucket_tags(bucket_id, user_id):
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT t.* FROM tags t JOIN bucket_tags bt ON bt.tag_id=t.id WHERE bt.bucket_id=%s AND bt.user_id=%s ORDER BY t.name",
+                (bucket_id, user_id),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def get_buckets_by_tag(tag_id, user_id, page=1, per_page=50):
+        with get_db() as db:
+            q = """SELECT b.*, p.name as provider_name, p.display_name as provider_display
+                   FROM buckets b
+                   JOIN bucket_tags bt ON bt.bucket_id=b.id
+                   JOIN providers p ON b.provider_id=p.id
+                   WHERE bt.tag_id=%s AND bt.user_id=%s"""
+            params = [tag_id, user_id]
+            total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
+            q += " ORDER BY b.last_scanned DESC NULLS LAST LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — BOOKMARKS
+# ═══════════════════════════════════════════════════════════════════
+
+class BookmarkStore:
+    @staticmethod
+    def toggle(user_id, bucket_id=None, file_id=None, note=None):
+        with get_db() as db:
+            # Check if bookmark exists
+            if bucket_id:
+                existing = db.execute(
+                    "SELECT id FROM bookmarks WHERE user_id=%s AND bucket_id=%s",
+                    (user_id, bucket_id),
+                ).fetchone()
+            elif file_id:
+                existing = db.execute(
+                    "SELECT id FROM bookmarks WHERE user_id=%s AND file_id=%s",
+                    (user_id, file_id),
+                ).fetchone()
+            else:
+                return {"error": "bucket_id or file_id required"}
+
+            if existing:
+                db.execute("DELETE FROM bookmarks WHERE id=%s", (existing["id"],))
+                return {"bookmarked": False}
+            else:
+                now = datetime.now(timezone.utc).isoformat()
+                db.execute(
+                    "INSERT INTO bookmarks (user_id, bucket_id, file_id, note, created_at) VALUES (%s, %s, %s, %s, %s)",
+                    (user_id, bucket_id, file_id, note, now),
+                )
+                row = db.execute("SELECT * FROM bookmarks WHERE id=%s", (db.lastrowid,)).fetchone()
+                result = dict(row) if row else {}
+                result["bookmarked"] = True
+                return result
+
+    @staticmethod
+    def list_by_user(user_id, bm_type='all', page=1, per_page=50):
+        with get_db() as db:
+            q = "SELECT * FROM bookmarks WHERE user_id=%s"
+            params = [user_id]
+            if bm_type == 'bucket':
+                q += " AND bucket_id IS NOT NULL"
+            elif bm_type == 'file':
+                q += " AND file_id IS NOT NULL"
+            total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
+            q += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
+
+    @staticmethod
+    def is_bookmarked(user_id, bucket_id=None, file_id=None):
+        with get_db() as db:
+            if bucket_id:
+                row = db.execute(
+                    "SELECT id FROM bookmarks WHERE user_id=%s AND bucket_id=%s",
+                    (user_id, bucket_id),
+                ).fetchone()
+            elif file_id:
+                row = db.execute(
+                    "SELECT id FROM bookmarks WHERE user_id=%s AND file_id=%s",
+                    (user_id, file_id),
+                ).fetchone()
+            else:
+                return False
+            return row is not None
+
+    @staticmethod
+    def get_bucket_bookmark_ids(user_id):
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT bucket_id FROM bookmarks WHERE user_id=%s AND bucket_id IS NOT NULL",
+                (user_id,),
+            ).fetchall()
+            return [r["bucket_id"] for r in rows]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — SCAN SCHEDULES
+# ═══════════════════════════════════════════════════════════════════
+
+class ScanScheduleStore:
+    @staticmethod
+    def _compute_next_run(frequency):
+        """Compute the next run time based on frequency."""
+        now = datetime.now(timezone.utc)
+        if frequency == 'hourly':
+            return (now + timedelta(hours=1)).isoformat()
+        elif frequency == 'daily':
+            return (now + timedelta(hours=24)).isoformat()
+        elif frequency == 'weekly':
+            return (now + timedelta(days=7)).isoformat()
+        elif frequency == 'monthly':
+            return (now + timedelta(days=30)).isoformat()
+        return (now + timedelta(hours=24)).isoformat()
+
+    @staticmethod
+    def create(user_id, name, keywords, companies=None, providers=None, frequency='daily', config=None):
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            next_run = ScanScheduleStore._compute_next_run(frequency)
+            config_str = json.dumps(config) if isinstance(config, dict) else (config or '{}')
+            db.execute("""
+                INSERT INTO scan_schedules (user_id, name, keywords, companies, providers,
+                    frequency, next_run_at, config, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (user_id, name, json.dumps(keywords), json.dumps(companies or []),
+                  json.dumps(providers or []), frequency, next_run, config_str, now, now))
+            row = db.execute("SELECT * FROM scan_schedules WHERE id=%s", (db.lastrowid,)).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_by_user(user_id):
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM scan_schedules WHERE user_id=%s ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def get(schedule_id, user_id):
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM scan_schedules WHERE id=%s AND user_id=%s",
+                (schedule_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def update(schedule_id, user_id, **kwargs):
+        allowed = {"name", "keywords", "companies", "providers", "frequency", "is_active", "config"}
+        updates, params = [], []
+        new_frequency = kwargs.get("frequency")
+        for k, v in kwargs.items():
+            if k in allowed and v is not None:
+                if k in ("keywords", "companies", "providers") and isinstance(v, list):
+                    v = json.dumps(v)
+                elif k == "config" and isinstance(v, dict):
+                    v = json.dumps(v)
+                updates.append(f"{k}=%s")
+                params.append(v)
+        if not updates:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        updates.append("updated_at=%s")
+        params.append(now)
+        if new_frequency:
+            next_run = ScanScheduleStore._compute_next_run(new_frequency)
+            updates.append("next_run_at=%s")
+            params.append(next_run)
+        params.extend([schedule_id, user_id])
+        with get_db() as db:
+            db.execute(
+                f"UPDATE scan_schedules SET {','.join(updates)} WHERE id=%s AND user_id=%s",
+                tuple(params),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def delete(schedule_id, user_id):
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM scan_schedules WHERE id=%s AND user_id=%s",
+                (schedule_id, user_id),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def list_due():
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            rows = db.execute(
+                "SELECT * FROM scan_schedules WHERE is_active=%s AND (next_run_at IS NULL OR next_run_at <= %s)",
+                (True, now),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def mark_run(schedule_id, job_id, frequency):
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            next_run = ScanScheduleStore._compute_next_run(frequency)
+            db.execute(
+                "UPDATE scan_schedules SET last_run_at=%s, last_job_id=%s, next_run_at=%s, updated_at=%s WHERE id=%s",
+                (now, job_id, next_run, now, schedule_id),
+            )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — AUDIT LOG
+# ═══════════════════════════════════════════════════════════════════
+
+class AuditLogStore:
+    @staticmethod
+    def log(user_id, action, entity_type=None, entity_id=None, details=None, ip_address=None):
+        try:
+            with get_db() as db:
+                now = datetime.now(timezone.utc).isoformat()
+                details_str = json.dumps(details) if isinstance(details, dict) else details
+                db.execute("""
+                    INSERT INTO audit_log (user_id, action, entity_type, entity_id, details, ip_address, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (user_id, action, entity_type, entity_id, details_str, ip_address, now))
+        except Exception as e:
+            logger.debug(f"Failed to write audit log: {e}")
+
+    @staticmethod
+    def list_by_user(user_id, action=None, entity_type=None, page=1, per_page=50):
+        with get_db() as db:
+            q = "SELECT * FROM audit_log WHERE user_id=%s"
+            params = [user_id]
+            if action:
+                q += " AND action=%s"
+                params.append(action)
+            if entity_type:
+                q += " AND entity_type=%s"
+                params.append(entity_type)
+            total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
+            q += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
+
+    @staticmethod
+    def list_by_entity(entity_type, entity_id, page=1, per_page=50):
+        with get_db() as db:
+            q = "SELECT * FROM audit_log WHERE entity_type=%s AND entity_id=%s"
+            params = [entity_type, entity_id]
+            total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
+            q += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
