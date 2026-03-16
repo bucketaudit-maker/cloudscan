@@ -234,26 +234,35 @@ export default function App() {
         </div></div>}
 
       {/* ─── NAV ─── */}
-      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-default)',backdropFilter:'blur(20px)',padding:'0 24px',height:56,display:'flex',alignItems:'center',gap:24}}>
-        <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:28,height:28,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
-          <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:17,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
-        <div style={{display:'flex',gap:4}}>
+      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-default)',backdropFilter:'blur(20px)',padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}}>
+        <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+          <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
+          <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
+        <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden'}}>
           {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
             <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
-              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>
-              <span style={{marginRight:5,fontSize:11}}>{ic}</span>{l}
-              {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:5}}>{monDash.unread_alerts}</span>:null}
+              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'var(--font-mono)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
+              <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
+              {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
             </button>))}</div>
-        <div style={{flex:1}}/>
-        <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontSize:14,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
-        {sseConnected && <div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--accent)'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',animation:'pulse 2s infinite'}}/>LIVE</div>}
-        {stats && <div style={{display:'flex',gap:20,fontSize:11,color:'var(--text-tertiary)'}}><span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
-        {user && <div style={{position:'relative',cursor:'pointer',marginRight:12}} onClick={()=>{setShowNotifPanel(!showNotifPanel);if(!showNotifPanel)loadNotifications()}}>
-          <span style={{fontSize:18}}>🔔</span>
-          {notifCount > 0 && <span style={{position:'absolute',top:-6,right:-6,background:'#f04848',color:'#fff',borderRadius:'50%',width:16,height:16,fontSize:10,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{notifCount > 9 ? '9+' : notifCount}</span>}
-        </div>}
-        {showNotifPanel && <div style={{position:'absolute',top:48,right:60,width:360,maxHeight:400,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.3)',zIndex:1000,overflow:'auto',padding:8}}>
+        <div style={{flex:1,minWidth:0}}/>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+          <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,padding:'3px 7px',cursor:'pointer',fontSize:13,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
+          {sseConnected && <div style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'var(--accent)'}}>
+            <div style={{width:5,height:5,borderRadius:'50%',background:'var(--accent)',animation:'pulse 2s infinite'}}/>LIVE</div>}
+          {stats && <div style={{display:'flex',gap:12,fontSize:10,color:'var(--text-tertiary)'}}>
+            <span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
+          {user && <div style={{position:'relative',cursor:'pointer'}} onClick={()=>{setShowNotifPanel(!showNotifPanel);if(!showNotifPanel)loadNotifications()}}>
+            <span style={{fontSize:16}}>🔔</span>
+            {notifCount > 0 && <span style={{position:'absolute',top:-5,right:-5,background:'#f04848',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{notifCount > 9 ? '9+' : notifCount}</span>}
+          </div>}
+          {user ? <>
+            <span style={{fontSize:11,color:'var(--text-secondary)',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{user.username}</span>
+            <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 7px',borderRadius:5,cursor:'pointer',fontSize:12}} title="Settings">⚙</button>
+            <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10}}>Logout</button>
+          </> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'5px 14px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:600}}>Sign In</button>}
+        </div>
+        {showNotifPanel && <div style={{position:'absolute',top:44,right:60,width:360,maxHeight:400,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.3)',zIndex:1000,overflow:'auto',padding:8}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border-default)'}}>
             <span style={{fontWeight:700,fontSize:14}}>Notifications</span>
             <button onClick={async()=>{await apiFetch('/notifications/read-all',{method:'POST'});loadNotifCount();loadNotifications()}} style={{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:12}}>Mark all read</button>
@@ -265,12 +274,6 @@ export default function App() {
             <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:4}}>{new Date(n.created_at).toLocaleString()}</div>
           </div>)}
         </div>}
-        {user ? <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <span style={{fontSize:11,color:'var(--text-secondary)'}}>{user.username}</span>
-          <span style={{fontSize:9,background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'1px 6px',borderRadius:3,textTransform:'uppercase' as const}}>{user.tier}</span>
-          <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
-          <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11}}>Logout</button>
-        </div> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'6px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Sign In</button>}
       </nav>
 
       {/* ─── AUTH ─── */}
