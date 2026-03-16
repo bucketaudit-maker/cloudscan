@@ -107,6 +107,18 @@ export default function App() {
   const [reports, setReports] = useState<any>({items:[], total:0})
   const [reportSchedules, setReportSchedules] = useState<any[]>([])
   const [integrations, setIntegrations] = useState<any[]>([])
+  // Sprint 5 state
+  const [tags, setTags] = useState<any[]>([])
+  const [bookmarkIds, setBookmarkIds] = useState<number[]>([])
+  const [scanSchedules, setScanSchedules] = useState<any[]>([])
+  const [auditLog, setAuditLog] = useState<any>({items:[], total:0})
+  const [advFilters, setAdvFilters] = useState({date_from:'',date_to:'',min_size:'',max_size:''})
+  const [showAdvFilters, setShowAdvFilters] = useState(false)
+  const [bulkAlerts, setBulkAlerts] = useState<number[]>([])
+  const [bulkRems, setBulkRems] = useState<number[]>([])
+  const [tagForm, setTagForm] = useState({name:'',color:'#6b7280'})
+  const [schedForm, setSchedForm] = useState({name:'',keywords:'',companies:'',frequency:'daily'})
+  const [showTagPicker, setShowTagPicker] = useState<number|null>(null)
 
   useEffect(()=>{ document.documentElement.setAttribute('data-theme',theme); try{localStorage.setItem('cs_theme',theme)}catch{} },[theme])
   useEffect(()=>{ try{localStorage.setItem('cs_onboarding',JSON.stringify(onboarding))}catch{} },[onboarding])
@@ -166,8 +178,8 @@ export default function App() {
   const doDeleteSavedSearch = async(id:number) => { await apiFetch(`/searches/saved/${id}`,{method:'DELETE'}); const d=await apiFetch('/searches/saved'); if(d?.items)setSavedSearches(d.items) }
   const doPreview = async(fileId:number) => { if(previewFile===fileId){setPreviewFile(null);setPreviewData(null);return} setPreviewFile(fileId); setPreviewLoading(true); const d=await apiFetch(`/files/${fileId}/preview`); setPreviewData(d); setPreviewLoading(false) }
 
-  const doSearch = useCallback(async(q:string, f:any=sf, useRegex:boolean=regexMode) => { if(!q.trim())return; setSLoading(true); setView('search'); setSq(q); const p:any={...f}; if(useRegex){p.regex=q}else{p.q=q} Object.keys(p).forEach((k:string)=>!p[k]&&delete p[k]); const qs=new URLSearchParams(p).toString(); const d=await apiFetch(`/files?${qs}`); setSr(d||{items:[],total:0,page:1,per_page:50,query:q,response_time_ms:0}); setSLoading(false); setOnboarding(o=>({...o,firstSearch:true})) },[sf,regexMode])
-  const loadBk = useCallback(async(f:any={}) => { const qs=new URLSearchParams(f).toString(); setBuckets(await apiFetch(`/buckets?${qs}`)||{items:[],total:0,page:1}); setView('buckets') },[])
+  const doSearch = useCallback(async(q:string, f:any=sf, useRegex:boolean=regexMode, af:any=advFilters) => { if(!q.trim())return; setSLoading(true); setView('search'); setSq(q); const p:any={...f}; if(useRegex){p.regex=q}else{p.q=q} if(af.date_from)p.date_from=af.date_from; if(af.date_to)p.date_to=af.date_to; if(af.min_size)p.min_size=af.min_size; if(af.max_size)p.max_size=af.max_size; Object.keys(p).forEach((k:string)=>!p[k]&&delete p[k]); const qs=new URLSearchParams(p).toString(); const d=await apiFetch(`/files?${qs}`); setSr(d||{items:[],total:0,page:1,per_page:50,query:q,response_time_ms:0}); setSLoading(false); setOnboarding(o=>({...o,firstSearch:true})) },[sf,regexMode,advFilters])
+  const loadBk = useCallback(async(f:any={}) => { const qs=new URLSearchParams(f).toString(); setBuckets(await apiFetch(`/buckets?${qs}`)||{items:[],total:0,page:1}); setView('buckets'); loadBookmarkIds(); loadTags() },[])
   const loadBd = useCallback(async(id:number) => { setBd(await apiFetch(`/buckets/${id}`)||null); setView('bucket-detail') },[])
   const startScan = async() => {
     const d:any={keywords:scanForm.keywords.split(',').map((s:string)=>s.trim()).filter(Boolean),companies:scanForm.companies.split(',').map((s:string)=>s.trim()).filter(Boolean)}
@@ -206,6 +218,11 @@ export default function App() {
   const loadReports = async () => { const d = await apiFetch('/reports?per_page=20'); if (d?.items) setReports(d) }
   const loadReportSchedules = async () => { const d = await apiFetch('/reports/schedules'); if (Array.isArray(d)) setReportSchedules(d) }
   const loadIntegrations = async () => { const d = await apiFetch('/integrations'); if (Array.isArray(d)) setIntegrations(d) }
+  // Sprint 5 data loaders
+  const loadTags = async()=>{const d=await apiFetch('/tags');if(Array.isArray(d))setTags(d)}
+  const loadBookmarkIds = async()=>{const d=await apiFetch('/bookmarks/ids');if(Array.isArray(d))setBookmarkIds(d)}
+  const loadScanSchedules = async()=>{const d=await apiFetch('/scans/schedules');if(Array.isArray(d))setScanSchedules(d)}
+  const loadAuditLog = async(p=1)=>{const d=await apiFetch(`/audit-log?page=${p}&per_page=50`);if(d?.items)setAuditLog(d)}
 
   // ═══════════════════════════════════════════════════════════════
   // ALL VIEWS INLINED — no component functions inside App()
@@ -240,7 +257,7 @@ export default function App() {
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden'}}>
           {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
-            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
+            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
               style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'var(--font-mono)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
               <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
@@ -258,7 +275,7 @@ export default function App() {
           </div>}
           {user ? <>
             <span style={{fontSize:11,color:'var(--text-secondary)',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{user.username}</span>
-            <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 7px',borderRadius:5,cursor:'pointer',fontSize:12}} title="Settings">⚙</button>
+            <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations();loadTags()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 7px',borderRadius:5,cursor:'pointer',fontSize:12}} title="Settings">⚙</button>
             <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10}}>Logout</button>
           </> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'5px 14px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:600}}>Sign In</button>}
         </div>
@@ -423,6 +440,26 @@ export default function App() {
           {aiAvail && <button onClick={()=>{setNlMode(!nlMode);if(!nlMode)setRegexMode(false)}} style={{background:nlMode?'var(--ai-accent)20':'var(--bg-primary)',border:`1px solid ${nlMode?'var(--ai-accent)':'var(--border-subtle)'}`,color:nlMode?'var(--ai-accent)':'var(--text-muted)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:700,whiteSpace:'nowrap' as const}}>AI</button>}
           <button onClick={()=>nlMode?doNlSearch(sq):doSearch(sq)} style={{background:nlMode?'linear-gradient(135deg,#a855f7,#7c3aed)':regexMode?'var(--warning)':'var(--accent)',border:'none',padding:'8px 20px',borderRadius:8,cursor:'pointer',color:nlMode?'#fff':'#000',fontWeight:700,fontSize:12}}>SEARCH</button></div>
         {nlMode && nlParsed && <div style={{marginBottom:12,padding:'8px 14px',background:'var(--ai-accent-glow)',border:'1px solid #a855f730',borderRadius:8,fontSize:11,color:'var(--text-secondary)'}}>AI parsed: {Object.entries(nlParsed).map(([k,v])=><span key={k} style={{marginRight:10}}><span style={{color:'var(--ai-accent)'}}>{k}</span>=<span style={{color:'var(--text-primary)'}}>{String(v)}</span></span>)}</div>}
+        {/* Advanced Filters */}
+        <div style={{marginBottom:12}}>
+          <button onClick={()=>setShowAdvFilters(!showAdvFilters)} style={{background:showAdvFilters?'var(--bg-tertiary)':'var(--bg-secondary)',border:`1px solid ${showAdvFilters?'var(--accent)':'var(--border-subtle)'}`,borderRadius:8,padding:'5px 14px',cursor:'pointer',color:showAdvFilters?'var(--accent)':'var(--text-muted)',fontSize:11,fontWeight:600}}>⚙ Advanced Filters {showAdvFilters?'▾':'▸'}</button>
+          {showAdvFilters && <div style={{marginTop:8,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:16}}>
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'end'}}>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>DATE FROM</label><input type="date" value={advFilters.date_from} onChange={e=>setAdvFilters({...advFilters,date_from:e.target.value})} style={{...IS,padding:'6px 10px',fontSize:11,width:140}}/></div>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>DATE TO</label><input type="date" value={advFilters.date_to} onChange={e=>setAdvFilters({...advFilters,date_to:e.target.value})} style={{...IS,padding:'6px 10px',fontSize:11,width:140}}/></div>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>MIN SIZE (KB)</label><input type="number" value={advFilters.min_size} onChange={e=>setAdvFilters({...advFilters,min_size:e.target.value})} placeholder="0" style={{...IS,padding:'6px 10px',fontSize:11,width:100}}/></div>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>MAX SIZE (MB)</label><input type="number" value={advFilters.max_size} onChange={e=>setAdvFilters({...advFilters,max_size:e.target.value})} placeholder="100" style={{...IS,padding:'6px 10px',fontSize:11,width:100}}/></div>
+              <button onClick={()=>{if(sq)doSearch(sq)}} style={{background:'var(--accent)',border:'none',borderRadius:6,padding:'7px 14px',color:'#000',fontSize:11,fontWeight:700,cursor:'pointer'}}>Apply</button>
+              <button onClick={()=>{setAdvFilters({date_from:'',date_to:'',min_size:'',max_size:''});if(sq)doSearch(sq,sf,regexMode,{date_from:'',date_to:'',min_size:'',max_size:''})}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'7px 14px',color:'var(--text-muted)',fontSize:11,cursor:'pointer'}}>Clear</button>
+            </div>
+          </div>}
+          {(advFilters.date_from||advFilters.date_to||advFilters.min_size||advFilters.max_size) && <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
+            {advFilters.date_from && <span style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'2px 8px',borderRadius:12,fontSize:10,display:'flex',alignItems:'center',gap:4}}>From: {advFilters.date_from} <span onClick={()=>{setAdvFilters(f=>({...f,date_from:''}));if(sq)doSearch(sq,sf,regexMode,{...advFilters,date_from:''})}} style={{cursor:'pointer',fontSize:12}}>✕</span></span>}
+            {advFilters.date_to && <span style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'2px 8px',borderRadius:12,fontSize:10,display:'flex',alignItems:'center',gap:4}}>To: {advFilters.date_to} <span onClick={()=>{setAdvFilters(f=>({...f,date_to:''}));if(sq)doSearch(sq,sf,regexMode,{...advFilters,date_to:''})}} style={{cursor:'pointer',fontSize:12}}>✕</span></span>}
+            {advFilters.min_size && <span style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'2px 8px',borderRadius:12,fontSize:10,display:'flex',alignItems:'center',gap:4}}>Min: {advFilters.min_size}KB <span onClick={()=>{setAdvFilters(f=>({...f,min_size:''}));if(sq)doSearch(sq,sf,regexMode,{...advFilters,min_size:''})}} style={{cursor:'pointer',fontSize:12}}>✕</span></span>}
+            {advFilters.max_size && <span style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'2px 8px',borderRadius:12,fontSize:10,display:'flex',alignItems:'center',gap:4}}>Max: {advFilters.max_size}MB <span onClick={()=>{setAdvFilters(f=>({...f,max_size:''}));if(sq)doSearch(sq,sf,regexMode,{...advFilters,max_size:''})}} style={{cursor:'pointer',fontSize:12}}>✕</span></span>}
+          </div>}
+        </div>
         <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
           {!nlMode && <select value={sf.provider} onChange={e=>{const f={...sf,provider:e.target.value,page:1};setSf(f);if(sq)doSearch(sq,f)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,color:'var(--text-secondary)',padding:'6px 12px',fontSize:12}}><option value="">All Providers</option>{Object.entries(PL).map(([k,v])=><option key={k} value={k}>{v as string}</option>)}</select>}
           {!nlMode && <select value={sf.sort} onChange={e=>{const f={...sf,sort:e.target.value};setSf(f);if(sq)doSearch(sq,f)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,color:'var(--text-secondary)',padding:'6px 12px',fontSize:12}}><option value="relevance">Relevance</option><option value="size_desc">Largest</option><option value="size_asc">Smallest</option><option value="newest">Newest</option><option value="filename">Filename</option></select>}
@@ -463,9 +500,11 @@ export default function App() {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20,flexWrap:'wrap',gap:12}}>
           <h2 style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>Public Buckets <span style={{fontSize:13,color:'var(--text-muted)',marginLeft:12}}>{fnum(buckets?.total||0)} indexed</span></h2>
           <div style={{display:'flex',gap:6}}>{['all','aws','azure','gcp','digitalocean','alibaba'].map(p=><button key={p} onClick={()=>loadBk(p==='all'?{}:{provider:p})} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'5px 12px',color:'var(--text-tertiary)',fontSize:11,cursor:'pointer'}}>{p==='all'?'All':PL[p]}</button>)}</div></div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>Bucket</span><span>Provider</span><span>Region</span><span>Status</span><span>Risk</span><span>Files</span><span>Size</span><span>Scanned</span></div>
-        {buckets?.items?.map((b:any,i:number)=><div key={b.id} onClick={()=>loadBd(b.id)} style={{display:'grid',gridTemplateColumns:'1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'12px 16px',alignItems:'center',cursor:'pointer',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
-          <span style={{fontSize:14,color:'var(--accent-dim)',fontWeight:600}}>{b.name}</span><Badge provider={b.provider_name}/><span style={{fontSize:12,color:'var(--text-muted)'}}>{b.region||'—'}</span><SBadge s={b.status}/>{b.risk_score!=null?<RiskBadge score={b.risk_score} level={b.risk_level||'info'}/>:<span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}<span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fnum(b.file_count)}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fmt(b.total_size_bytes)}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>{ago(b.last_scanned)}</span></div>)}
+        <div style={{display:'grid',gridTemplateColumns:'28px 1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>★</span><span>Bucket</span><span>Provider</span><span>Region</span><span>Status</span><span>Risk</span><span>Files</span><span>Size</span><span>Scanned</span></div>
+        {buckets?.items?.map((b:any,i:number)=><div key={b.id} onClick={()=>loadBd(b.id)} style={{display:'grid',gridTemplateColumns:'28px 1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'12px 16px',alignItems:'center',cursor:'pointer',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
+          <span onClick={e=>{e.stopPropagation();apiFetch('/bookmarks',{method:'POST',body:JSON.stringify({bucket_id:b.id})}).then(()=>loadBookmarkIds())}} style={{fontSize:16,cursor:'pointer',color:bookmarkIds.includes(b.id)?'var(--accent)':'var(--text-muted)',transition:'color 0.2s'}}>{bookmarkIds.includes(b.id)?'★':'☆'}</span>
+          <div style={{minWidth:0}}><span style={{fontSize:14,color:'var(--accent-dim)',fontWeight:600}}>{b.name}</span>{b.tags?.length>0&&<span style={{marginLeft:6}}>{b.tags.map((t:any)=><span key={t.id||t.name} style={{background:t.color+'20',color:t.color,border:`1px solid ${t.color}40`,padding:'1px 6px',borderRadius:10,fontSize:9,fontWeight:600,marginLeft:4}}>{t.name}</span>)}</span>}{showTagPicker===b.id&&<div onClick={e=>e.stopPropagation()} style={{position:'absolute',zIndex:50,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:8,padding:8,boxShadow:'0 4px 16px rgba(0,0,0,0.3)',marginTop:4}}>{tags.map(t=><span key={t.id} onClick={()=>{apiFetch(`/buckets/${b.id}/tags`,{method:'POST',body:JSON.stringify({tag_id:t.id})}).then(()=>{loadBk();setShowTagPicker(null)})}} style={{display:'inline-block',background:t.color+'20',color:t.color,border:`1px solid ${t.color}40`,padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:600,margin:2,cursor:'pointer'}}>{t.name}</span>)}{tags.length===0&&<span style={{fontSize:10,color:'var(--text-muted)'}}>No tags. Create in Settings.</span>}</div>}<button onClick={e=>{e.stopPropagation();setShowTagPicker(showTagPicker===b.id?null:b.id)}} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:10,marginLeft:4,padding:0}}>🏷</button></div>
+          <Badge provider={b.provider_name}/><span style={{fontSize:12,color:'var(--text-muted)'}}>{b.region||'—'}</span><SBadge s={b.status}/>{b.risk_score!=null?<RiskBadge score={b.risk_score} level={b.risk_level||'info'}/>:<span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}<span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fnum(b.file_count)}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{fmt(b.total_size_bytes)}</span><span style={{fontSize:11,color:'var(--text-muted)'}}>{ago(b.last_scanned)}</span></div>)}
         {buckets && buckets.total > (buckets.per_page||50) && (()=>{ const tp=Math.ceil(buckets.total/(buckets.per_page||50)),cp=buckets.page||1; const pages:number[]=[]; if(tp<=7){for(let i=1;i<=tp;i++)pages.push(i)}else{pages.push(1);if(cp>3)pages.push(-1);for(let i=Math.max(2,cp-1);i<=Math.min(tp-1,cp+1);i++)pages.push(i);if(cp<tp-2)pages.push(-1);pages.push(tp)} return <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:6,marginTop:16}}>
           <button onClick={()=>loadBk({page:cp-1})} disabled={cp===1} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'5px 12px',color:cp===1?'var(--text-muted)':'var(--text-secondary)',fontSize:11,cursor:cp===1?'default':'pointer'}}>Prev</button>
           {pages.map((p,i)=>p===-1?<span key={'e'+i} style={{color:'var(--text-muted)',fontSize:11}}>...</span>:<button key={p} onClick={()=>loadBk({page:p})} style={{background:p===cp?'var(--accent)':'var(--bg-secondary)',border:`1px solid ${p===cp?'var(--accent)':'var(--border-subtle)'}`,borderRadius:6,padding:'5px 10px',color:p===cp?'#000':'var(--text-secondary)',fontSize:11,fontWeight:p===cp?700:400,cursor:'pointer',minWidth:32}}>{p}</button>)}
@@ -516,6 +555,31 @@ export default function App() {
             {(j.status==='running'||j.status==='pending')?<button onClick={()=>cancelScan(j.id)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--danger)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10}}>Cancel</button>:<span/>}
           </div>})}
         </div>}
+
+        {/* Scan Schedules */}
+        <div style={{marginTop:32}}>
+          <h3 style={{fontSize:15,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:12}}>Scan Schedules</h3>
+          <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>SCHEDULE NAME</label><input value={schedForm.name} onChange={e=>setSchedForm({...schedForm,name:e.target.value})} placeholder="Daily backup scan" style={IS}/></div>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>FREQUENCY</label><select value={schedForm.frequency} onChange={e=>setSchedForm({...schedForm,frequency:e.target.value})} style={{...IS,appearance:'auto' as any}}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
+            </div>
+            <div style={{marginBottom:12}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>KEYWORDS (comma-separated)</label><textarea value={schedForm.keywords} onChange={e=>setSchedForm({...schedForm,keywords:e.target.value})} placeholder="backup, database, config" style={{...IS,minHeight:50,resize:'vertical' as const}}/></div>
+            <button onClick={async()=>{if(!schedForm.name||!schedForm.keywords.trim())return;await apiFetch('/scans/schedules',{method:'POST',body:JSON.stringify({name:schedForm.name,keywords:schedForm.keywords.split(',').map(s=>s.trim()).filter(Boolean),companies:schedForm.companies?schedForm.companies.split(',').map(s=>s.trim()).filter(Boolean):[],frequency:schedForm.frequency})});setSchedForm({name:'',keywords:'',companies:'',frequency:'daily'});loadScanSchedules()}} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>+ Create Schedule</button>
+          </div>
+          {scanSchedules.length>0 && scanSchedules.map((s:any)=>{const fc:any={hourly:'#4a9eff',daily:'var(--accent)',weekly:'#f5a623',monthly:'#a855f7'};return <div key={s.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:'14px 20px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><span style={{fontSize:14,fontWeight:600}}>{s.name}</span><span style={{background:(fc[s.frequency]||'var(--text-muted)')+'18',color:fc[s.frequency]||'var(--text-muted)',border:`1px solid ${(fc[s.frequency]||'var(--text-muted)')}40`,padding:'1px 8px',borderRadius:4,fontSize:9,fontWeight:700,textTransform:'uppercase' as const}}>{s.frequency}</span><span style={{width:8,height:8,borderRadius:'50%',background:s.is_active?'var(--accent)':'var(--text-muted)'}}/></div>
+              <div style={{fontSize:11,color:'var(--text-muted)'}}>{s.keywords?((typeof s.keywords==='string'?JSON.parse(s.keywords):s.keywords)||[]).join(', '):''} | Last: {s.last_run_at?ago(s.last_run_at):'Never'} | Next: {s.next_run_at?new Date(s.next_run_at).toLocaleString():'—'}</div>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button onClick={()=>apiFetch(`/scans/schedules/${s.id}/toggle`,{method:'POST'}).then(()=>loadScanSchedules())} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:s.is_active?'var(--warning)':'var(--accent)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10}}>{s.is_active?'Pause':'Enable'}</button>
+              <button onClick={()=>apiFetch(`/scans/schedules/${s.id}/run`,{method:'POST'}).then(()=>{loadScanSchedules();loadScanHistory()})} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10}}>Run Now</button>
+              <button onClick={()=>apiFetch(`/scans/schedules/${s.id}`,{method:'DELETE'}).then(()=>loadScanSchedules())} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10}}>Delete</button>
+            </div>
+          </div>})}
+          {scanSchedules.length===0 && <div style={{textAlign:'center',padding:24,color:'var(--text-muted)',fontSize:12}}>No scan schedules configured. Create one above.</div>}
+        </div>
         </div>}
 
       {/* ─── MONITOR ─── */}
@@ -549,7 +613,15 @@ export default function App() {
             <div style={{display:'flex',gap:4,marginLeft:'auto'}}>{['','critical','high','medium','low','info'].map(s=><button key={s} onClick={()=>{setAlertSevFilter(s);const params=s?`?severity=${s}`:'';apiFetch(`/monitor/alerts${params}`).then(d=>{if(d)setAlerts(d)})}} style={{background:alertSevFilter===s?'var(--bg-tertiary)':'transparent',border:alertSevFilter===s?'1px solid var(--border-default)':'1px solid transparent',color:alertSevFilter===s?'var(--accent)':'var(--text-muted)',padding:'3px 10px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,textTransform:'uppercase' as const}}>{s||'All'}</button>)}</div>
           </div>
           {!alerts?.items?.length ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:13}}>No alerts yet. Create a watchlist and run a scan.</div>
-          : <div style={{display:'flex',flexDirection:'column',gap:4}}>{alerts.items.map((a:any)=><div key={a.id} onClick={()=>!a.is_read&&markAlertRead(a.id)} style={{background:a.is_resolved?'var(--bg-primary)':a.is_read?'var(--bg-secondary)':'var(--bg-tertiary)',border:`1px solid ${a.is_resolved?'var(--border-subtle)':a.is_read?'var(--border-default)':'var(--border-strong)'}`,borderRadius:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',opacity:a.is_resolved?0.6:1}}>
+          : <div style={{display:'flex',flexDirection:'column',gap:4}}>
+            {bulkAlerts.length>0 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',background:'var(--bg-tertiary)',border:'1px solid var(--accent)',borderRadius:8,marginBottom:4}}>
+              <span style={{fontSize:12,fontWeight:700,color:'var(--accent)'}}>{bulkAlerts.length} selected</span>
+              <button onClick={async()=>{await apiFetch('/monitor/alerts/bulk-read',{method:'POST',body:JSON.stringify({alert_ids:bulkAlerts})});setBulkAlerts([]);loadMonitor()}} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Mark Read</button>
+              <button onClick={async()=>{await apiFetch('/monitor/alerts/bulk-resolve',{method:'POST',body:JSON.stringify({alert_ids:bulkAlerts})});setBulkAlerts([]);loadMonitor()}} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Resolve All</button>
+              <button onClick={()=>setBulkAlerts([])} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10}}>Clear</button>
+            </div>}
+            {alerts.items.map((a:any)=><div key={a.id} onClick={()=>!a.is_read&&markAlertRead(a.id)} style={{background:a.is_resolved?'var(--bg-primary)':a.is_read?'var(--bg-secondary)':'var(--bg-tertiary)',border:`1px solid ${a.is_resolved?'var(--border-subtle)':a.is_read?'var(--border-default)':'var(--border-strong)'}`,borderRadius:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',opacity:a.is_resolved?0.6:1}}>
+            <input type="checkbox" checked={bulkAlerts.includes(a.id)} onChange={e=>{e.stopPropagation();setBulkAlerts(prev=>prev.includes(a.id)?prev.filter(x=>x!==a.id):[...prev,a.id])}} onClick={e=>e.stopPropagation()} style={{width:14,height:14,accentColor:'var(--accent)',cursor:'pointer',flexShrink:0}}/>
             <SevBadge s={a.severity}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:a.is_read?400:600,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis',textDecoration:a.is_resolved?'line-through':'none'}}>{a.title}</div><div style={{fontSize:11,color:'var(--text-muted)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.description}</div></div>
             {a.is_resolved?<span style={{fontSize:10,color:'var(--accent)',fontWeight:600}}>✓ Resolved</span>:<button onClick={(e)=>{e.stopPropagation();resolveAlert(a.id)}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>Resolve</button>}
             <button onClick={async(e)=>{e.stopPropagation();await apiFetch(`/alerts/${a.id}/remediate`,{method:'POST',body:JSON.stringify({title:a.title,priority:a.severity})})}} style={{background:'rgba(0,255,136,0.08)',border:'1px solid rgba(0,232,123,0.25)',color:'var(--accent)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>✓ Fix</button>
@@ -696,8 +768,15 @@ export default function App() {
 
         {/* Remediation List */}
         <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden'}}>
+          {bulkRems.length>0 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',background:'var(--bg-tertiary)',borderBottom:'1px solid var(--accent)'}}>
+            <span style={{fontSize:12,fontWeight:700,color:'var(--accent)'}}>{bulkRems.length} selected</span>
+            <button onClick={async()=>{await apiFetch('/remediations/bulk-close',{method:'POST',body:JSON.stringify({remediation_ids:bulkRems})});setBulkRems([]);loadRemediations();loadRemDashboard()}} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Close All</button>
+            <select onChange={async(e)=>{if(!e.target.value)return;await apiFetch('/remediations/bulk-status',{method:'POST',body:JSON.stringify({remediation_ids:bulkRems,status:e.target.value})});setBulkRems([]);loadRemediations();loadRemDashboard();e.target.value=''}} style={{padding:'4px 8px',background:'var(--bg-primary)',border:'1px solid var(--border-default)',borderRadius:6,color:'var(--text-primary)',fontSize:11}} defaultValue=""><option value="" disabled>Change Status</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="verified">Verified</option><option value="closed">Closed</option></select>
+            <button onClick={()=>setBulkRems([])} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10}}>Clear</button>
+          </div>}
           {remediations.items?.length === 0 ? <div style={{padding:40,textAlign:'center',color:'var(--text-secondary)'}}>No remediations yet</div> :
           remediations.items?.map((r:any)=><div key={r.id} style={{padding:'12px 16px',borderBottom:'1px solid var(--border-default)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <input type="checkbox" checked={bulkRems.includes(r.id)} onChange={()=>setBulkRems(prev=>prev.includes(r.id)?prev.filter(x=>x!==r.id):[...prev,r.id])} style={{width:14,height:14,accentColor:'var(--accent)',cursor:'pointer',flexShrink:0,marginRight:12}}/>
             <div style={{flex:1}}>
               <div style={{fontWeight:600,fontSize:14}}>{r.title}</div>
               <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:2}}>{r.bucket_name} • {r.priority} priority • {new Date(r.created_at).toLocaleDateString()}</div>
@@ -775,6 +854,52 @@ export default function App() {
               <button onClick={async()=>{await apiFetch(`/integrations/${i.id}`,{method:'DELETE'});loadIntegrations()}} style={{padding:'3px 8px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--danger)',borderRadius:4,fontSize:10,cursor:'pointer'}}>Delete</button>
             </div>
           </div>)}
+        </div>
+
+        {/* Tags */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+          <h3 style={{fontSize:14,marginBottom:4,color:'var(--text-secondary)'}}>Tags</h3>
+          <p style={{fontSize:11,color:'var(--text-muted)',margin:'0 0 16px'}}>Create tags to organize and categorize your buckets.</p>
+          <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'end'}}>
+            <div style={{flex:1}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>TAG NAME</label><input value={tagForm.name} onChange={e=>setTagForm({...tagForm,name:e.target.value})} placeholder="e.g. production, sensitive" style={{...IS,padding:'8px 12px'}}/></div>
+            <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>COLOR</label><input type="color" value={tagForm.color} onChange={e=>setTagForm({...tagForm,color:e.target.value})} style={{width:40,height:38,padding:2,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,cursor:'pointer'}}/></div>
+            <button onClick={async()=>{if(!tagForm.name.trim())return;await apiFetch('/tags',{method:'POST',body:JSON.stringify(tagForm)});setTagForm({name:'',color:'#6b7280'});loadTags()}} style={{background:'var(--accent)',color:'#000',border:'none',borderRadius:8,padding:'8px 14px',fontWeight:600,cursor:'pointer',fontSize:12,whiteSpace:'nowrap' as const}}>Create</button>
+          </div>
+          {tags.length===0?<div style={{fontSize:12,color:'var(--text-muted)',padding:'8px 0'}}>No tags created yet.</div>:
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {tags.map((t:any)=><div key={t.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:10,height:10,borderRadius:'50%',background:t.color,flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{t.name}</span>
+                <span style={{background:t.color+'20',color:t.color,border:`1px solid ${t.color}40`,padding:'1px 6px',borderRadius:10,fontSize:9,fontWeight:600}}>{t.name}</span>
+              </div>
+              <div style={{display:'flex',gap:6}}>
+                <button onClick={async()=>{const newName=prompt('New tag name:',t.name);if(newName&&newName!==t.name){await apiFetch(`/tags/${t.id}`,{method:'PUT',body:JSON.stringify({name:newName})});loadTags()}}} style={{padding:'3px 8px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--text-secondary)',borderRadius:4,fontSize:10,cursor:'pointer'}}>Edit</button>
+                <button onClick={async()=>{await apiFetch(`/tags/${t.id}`,{method:'DELETE'});loadTags()}} style={{padding:'3px 8px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--danger)',borderRadius:4,fontSize:10,cursor:'pointer'}}>Delete</button>
+              </div>
+            </div>)}
+          </div>}
+        </div>
+
+        {/* Audit Log */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+            <div><h3 style={{fontSize:14,margin:0,color:'var(--text-secondary)'}}>Audit Log</h3><p style={{fontSize:11,color:'var(--text-muted)',margin:'4px 0 0'}}>Track all changes and actions in your account.</p></div>
+            <button onClick={()=>loadAuditLog(1)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'5px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Load Log</button>
+          </div>
+          {auditLog.items.length>0 && <>
+            <div style={{display:'grid',gridTemplateColumns:'130px 80px 120px 1fr',gap:8,padding:'6px 12px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'0.5px',borderBottom:'1px solid var(--border-subtle)'}}><span>Timestamp</span><span>Action</span><span>Entity</span><span>Details</span></div>
+            {auditLog.items.map((e:any,i:number)=>{const ac:any={create:{bg:'rgba(0,255,136,0.12)',c:'var(--accent)'},update:{bg:'rgba(74,158,255,0.12)',c:'#4a9eff'},delete:{bg:'rgba(240,72,72,0.12)',c:'#f04848'}};const s=ac[e.action]||{bg:'var(--bg-primary)',c:'var(--text-muted)'};return <div key={e.id||i} style={{display:'grid',gridTemplateColumns:'130px 80px 120px 1fr',gap:8,padding:'8px 12px',alignItems:'center',background:i%2===0?'var(--bg-primary)':'transparent',borderRadius:4}}>
+              <span style={{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}>{e.created_at?new Date(e.created_at).toLocaleString():e.timestamp?new Date(e.timestamp).toLocaleString():'—'}</span>
+              <span style={{background:s.bg,color:s.c,padding:'2px 8px',borderRadius:4,fontSize:9,fontWeight:700,textTransform:'uppercase' as const,textAlign:'center' as const}}>{e.action}</span>
+              <span style={{fontSize:11,color:'var(--text-secondary)'}}>{e.entity_type}{e.entity_id?` #${e.entity_id}`:''}</span>
+              <span style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{typeof e.details==='object'?JSON.stringify(e.details):e.details||'—'}</span>
+            </div>})}
+            {auditLog.total>auditLog.items.length && <div style={{textAlign:'center',marginTop:12}}>
+              <button onClick={()=>loadAuditLog(Math.floor(auditLog.items.length/50)+1)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'6px 16px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600}}>Load More ({auditLog.total - auditLog.items.length} remaining)</button>
+            </div>}
+          </>}
+          {auditLog.items.length===0 && <div style={{textAlign:'center',padding:16,color:'var(--text-muted)',fontSize:12}}>Click "Load Log" to view audit trail.</div>}
         </div>
       </div>}
 
