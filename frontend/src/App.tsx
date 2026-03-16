@@ -91,12 +91,28 @@ export default function App() {
   const [activity,setActivity] = useState<any>(null); const [activityPage,setActivityPage] = useState(1)
   const [showWelcome,setShowWelcome] = useState(false); const [copiedKey,setCopiedKey] = useState(false)
   const [onboarding,setOnboarding] = useState<{firstScan:boolean,firstSearch:boolean,firstMonitor:boolean,dismissed:boolean}>(()=>{ try{const s=localStorage.getItem('cs_onboarding');return s?JSON.parse(s):{firstScan:false,firstSearch:false,firstMonitor:false,dismissed:false}}catch{return{firstScan:false,firstSearch:false,firstMonitor:false,dismissed:false}} })
+  // Sprint 4 state
+  const [notifCount, setNotifCount] = useState(0)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [showNotifPanel, setShowNotifPanel] = useState(false)
+  const [orgs, setOrgs] = useState<any[]>([])
+  const [activeOrg, setActiveOrg] = useState<any>(null)
+  const [orgMembers, setOrgMembers] = useState<any[]>([])
+  const [complianceFrameworks, setComplianceFrameworks] = useState<any[]>([])
+  const [complianceDashboard, setComplianceDashboard] = useState<any>(null)
+  const [complianceResults, setComplianceResults] = useState<any[]>([])
+  const [selectedFramework, setSelectedFramework] = useState<any>(null)
+  const [remediations, setRemediations] = useState<any>({items:[], total:0})
+  const [remDashboard, setRemDashboard] = useState<any>({})
+  const [reports, setReports] = useState<any>({items:[], total:0})
+  const [reportSchedules, setReportSchedules] = useState<any[]>([])
+  const [integrations, setIntegrations] = useState<any[]>([])
 
   useEffect(()=>{ document.documentElement.setAttribute('data-theme',theme); try{localStorage.setItem('cs_theme',theme)}catch{} },[theme])
   useEffect(()=>{ try{localStorage.setItem('cs_onboarding',JSON.stringify(onboarding))}catch{} },[onboarding])
 
   useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d){setAiAvail(d.available||false);setAiProvider(d.active_provider||'');setAiProviders(d.providers||[])} }); apiFetch('/stats/timeline?days=30').then(d=>d&&setDashTimeline(d)); apiFetch('/stats/breakdown').then(d=>d&&setDashBreakdown(d)) }, [])
-  useEffect(() => { if(_token) { apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }); apiFetch('/searches/saved').then(d=>{if(d?.items)setSavedSearches(d.items)}) } }, [])
+  useEffect(() => { if(_token) { apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }); apiFetch('/searches/saved').then(d=>{if(d?.items)setSavedSearches(d.items)}); loadNotifCount(); loadOrgs() } const notifInterval = setInterval(() => { if(_token) loadNotifCount() }, 30000); return () => clearInterval(notifInterval) }, [])
 
   const connectSSE = useCallback(() => {
     if(sseCleanup.current) sseCleanup.current()
@@ -179,6 +195,18 @@ export default function App() {
   const updateSettings = async() => { if(settingsForm.password&&settingsForm.password!==settingsForm.confirmPassword){setSettingsMsg('Passwords do not match');return} const body:any={}; if(settingsForm.username.trim())body.username=settingsForm.username.trim(); if(settingsForm.password)body.password=settingsForm.password; if(!Object.keys(body).length){setSettingsMsg('No changes to save');return} const r=await apiFetch('/auth/settings',{method:'PUT',body:JSON.stringify(body)}); if(r?.id){setUser(r);setSettingsMsg('Settings updated');setSettingsForm({username:'',password:'',confirmPassword:''})}else{setSettingsMsg(r?.error||'Update failed')} }
   const loadActivity = async(page:number=1) => { setActivityPage(page); const d=await apiFetch(`/activity?page=${page}&per_page=50`); if(d)setActivity(d) }
 
+  // Sprint 4 data loaders
+  const loadNotifCount = async () => { const d = await apiFetch('/notifications/unread-count'); if (d) setNotifCount(d.count || 0) }
+  const loadNotifications = async () => { const d = await apiFetch('/notifications?per_page=20'); if (d?.items) setNotifications(d.items) }
+  const loadOrgs = async () => { const d = await apiFetch('/orgs'); if (Array.isArray(d)) setOrgs(d) }
+  const loadComplianceDashboard = async () => { const d = await apiFetch('/compliance/dashboard'); if (d) setComplianceDashboard(d) }
+  const loadComplianceFrameworks = async () => { const d = await apiFetch('/compliance/frameworks'); if (Array.isArray(d)) setComplianceFrameworks(d) }
+  const loadRemediations = async () => { const d = await apiFetch('/remediations?per_page=50'); if (d?.items) setRemediations(d) }
+  const loadRemDashboard = async () => { const d = await apiFetch('/remediations/dashboard'); if (d) setRemDashboard(d) }
+  const loadReports = async () => { const d = await apiFetch('/reports?per_page=20'); if (d?.items) setReports(d) }
+  const loadReportSchedules = async () => { const d = await apiFetch('/reports/schedules'); if (Array.isArray(d)) setReportSchedules(d) }
+  const loadIntegrations = async () => { const d = await apiFetch('/integrations'); if (Array.isArray(d)) setIntegrations(d) }
+
   // ═══════════════════════════════════════════════════════════════
   // ALL VIEWS INLINED — no component functions inside App()
   // This prevents React from remounting inputs on every state change
@@ -211,8 +239,8 @@ export default function App() {
           <div style={{width:28,height:28,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:17,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:4}}>
-          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
-            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
+          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
+            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
               style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>
               <span style={{marginRight:5,fontSize:11}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:5}}>{monDash.unread_alerts}</span>:null}
@@ -221,10 +249,26 @@ export default function App() {
         <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontSize:14,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
         {sseConnected && <div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--accent)'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',animation:'pulse 2s infinite'}}/>LIVE</div>}
         {stats && <div style={{display:'flex',gap:20,fontSize:11,color:'var(--text-tertiary)'}}><span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
+        {user && <div style={{position:'relative',cursor:'pointer',marginRight:12}} onClick={()=>{setShowNotifPanel(!showNotifPanel);if(!showNotifPanel)loadNotifications()}}>
+          <span style={{fontSize:18}}>🔔</span>
+          {notifCount > 0 && <span style={{position:'absolute',top:-6,right:-6,background:'#f04848',color:'#fff',borderRadius:'50%',width:16,height:16,fontSize:10,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{notifCount > 9 ? '9+' : notifCount}</span>}
+        </div>}
+        {showNotifPanel && <div style={{position:'absolute',top:48,right:60,width:360,maxHeight:400,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.3)',zIndex:1000,overflow:'auto',padding:8}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border-default)'}}>
+            <span style={{fontWeight:700,fontSize:14}}>Notifications</span>
+            <button onClick={async()=>{await apiFetch('/notifications/read-all',{method:'POST'});loadNotifCount();loadNotifications()}} style={{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:12}}>Mark all read</button>
+          </div>
+          {notifications.length === 0 ? <div style={{padding:20,textAlign:'center',color:'var(--text-secondary)',fontSize:13}}>No notifications</div> :
+          notifications.map((n:any)=><div key={n.id} onClick={async()=>{if(!n.is_read){await apiFetch(`/notifications/${n.id}/read`,{method:'POST'});loadNotifCount();loadNotifications()}}} style={{padding:'10px 12px',borderBottom:'1px solid var(--border-default)',cursor:'pointer',opacity:n.is_read?0.6:1,background:n.is_read?'transparent':'rgba(0,255,136,0.05)'}}>
+            <div style={{fontWeight:600,fontSize:13}}>{n.title}</div>
+            {n.body && <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:4}}>{n.body}</div>}
+            <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:4}}>{new Date(n.created_at).toLocaleString()}</div>
+          </div>)}
+        </div>}
         {user ? <div style={{display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:11,color:'var(--text-secondary)'}}>{user.username}</span>
           <span style={{fontSize:9,background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'1px 6px',borderRadius:3,textTransform:'uppercase' as const}}>{user.tier}</span>
-          <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)})}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
+          <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 8px',borderRadius:6,cursor:'pointer',fontSize:13}} title="Settings">⚙</button>
           <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'4px 10px',borderRadius:8,cursor:'pointer',fontSize:11}}>Logout</button>
         </div> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'6px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Sign In</button>}
       </nav>
@@ -505,6 +549,8 @@ export default function App() {
           : <div style={{display:'flex',flexDirection:'column',gap:4}}>{alerts.items.map((a:any)=><div key={a.id} onClick={()=>!a.is_read&&markAlertRead(a.id)} style={{background:a.is_resolved?'var(--bg-primary)':a.is_read?'var(--bg-secondary)':'var(--bg-tertiary)',border:`1px solid ${a.is_resolved?'var(--border-subtle)':a.is_read?'var(--border-default)':'var(--border-strong)'}`,borderRadius:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',opacity:a.is_resolved?0.6:1}}>
             <SevBadge s={a.severity}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:a.is_read?400:600,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis',textDecoration:a.is_resolved?'line-through':'none'}}>{a.title}</div><div style={{fontSize:11,color:'var(--text-muted)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{a.description}</div></div>
             {a.is_resolved?<span style={{fontSize:10,color:'var(--accent)',fontWeight:600}}>✓ Resolved</span>:<button onClick={(e)=>{e.stopPropagation();resolveAlert(a.id)}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>Resolve</button>}
+            <button onClick={async(e)=>{e.stopPropagation();await apiFetch(`/alerts/${a.id}/remediate`,{method:'POST',body:JSON.stringify({title:a.title,priority:a.severity})})}} style={{background:'rgba(0,255,136,0.08)',border:'1px solid rgba(0,232,123,0.25)',color:'var(--accent)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>✓ Fix</button>
+            <button onClick={async(e)=>{e.stopPropagation();const r=await apiFetch(`/alerts/${a.id}/create-jira`,{method:'POST'});alert(r?.success?`Jira: ${r.issue_key}`:'No Jira integration')}} style={{background:'rgba(0,100,255,0.08)',border:'1px solid rgba(74,158,255,0.25)',color:'#4a9eff',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>⬆ Jira</button>
             {a.ai_priority_score!=null&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>⚡{a.ai_priority_score}</span>}{a.provider_name&&<Badge provider={a.provider_name}/>}<span style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap' as const}}>{ago(a.created_at)}</span>{!a.is_read&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>}</div>)}</div>}
           <div style={{marginTop:32}}>
             <h3 style={{fontSize:15,marginBottom:12}}>Webhooks</h3>
@@ -579,6 +625,93 @@ export default function App() {
         </div>
       </div>}
 
+      {/* ─── COMPLIANCE ─── */}
+      {view === 'compliance' && <div style={{maxWidth:1100,margin:'0 auto',padding:'80px 24px 24px'}}>
+        <h2 style={{fontSize:24,marginBottom:20}}>☑ Compliance & Audit</h2>
+
+        {/* Dashboard Cards */}
+        {complianceDashboard && <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:16,marginBottom:24}}>
+          {(Array.isArray(complianceDashboard) ? complianceDashboard : complianceDashboard.frameworks || []).map((fw:any)=><div key={fw.framework_id} onClick={async()=>{setSelectedFramework(fw);const r=await apiFetch(`/compliance/results/${fw.framework_id}`);if(Array.isArray(r))setComplianceResults(r)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:16,cursor:'pointer',transition:'border-color 0.2s',borderColor:selectedFramework?.framework_id===fw.framework_id?'var(--accent)':'var(--border-default)'}}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>{fw.display_name}</div>
+            <div style={{fontSize:28,fontWeight:700,color:fw.score>=80?'var(--accent)':fw.score>=50?'#ffc107':'#f04848'}}>{fw.score}%</div>
+            <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:4}}>{fw.passed}/{fw.total_controls} controls passed</div>
+            <div style={{marginTop:8,height:4,background:'var(--border-default)',borderRadius:2,overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${fw.score}%`,background:fw.score>=80?'var(--accent)':fw.score>=50?'#ffc107':'#f04848',borderRadius:2,transition:'width 0.3s'}}/>
+            </div>
+          </div>)}
+        </div>}
+
+        {/* Run Check + Export */}
+        {selectedFramework && <div style={{display:'flex',gap:12,marginBottom:16}}>
+          <button onClick={async()=>{const r=await apiFetch(`/compliance/check/${selectedFramework.framework_id}`,{method:'POST'});if(r?.results)setComplianceResults(r.results);loadComplianceDashboard()}} style={{padding:'8px 16px',background:'var(--accent)',color:'#000',border:'none',borderRadius:8,fontWeight:600,cursor:'pointer'}}>▶ Run Check</button>
+          <button onClick={async()=>{const e=await apiFetch(`/compliance/export/${selectedFramework.framework_id}`);if(e){const blob=new Blob([JSON.stringify(e,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`compliance-${selectedFramework.name}.json`;a.click()}}} style={{padding:'8px 16px',background:'transparent',color:'var(--text-primary)',border:'1px solid var(--border-default)',borderRadius:8,fontWeight:600,cursor:'pointer'}}>⬇ Export Evidence</button>
+        </div>}
+
+        {/* Results Table */}
+        {complianceResults.length > 0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{background:'rgba(0,0,0,0.2)'}}>
+              <th style={{padding:'10px 12px',textAlign:'left'}}>Control</th>
+              <th style={{padding:'10px 12px',textAlign:'left'}}>Name</th>
+              <th style={{padding:'10px 12px',textAlign:'center'}}>Status</th>
+              <th style={{padding:'10px 12px',textAlign:'center'}}>Severity</th>
+            </tr></thead>
+            <tbody>{complianceResults.map((r:any,i:number)=><tr key={i} style={{borderTop:'1px solid var(--border-default)'}}>
+              <td style={{padding:'10px 12px',fontFamily:'var(--font-mono)',fontSize:12}}>{r.control_id}</td>
+              <td style={{padding:'10px 12px'}}>{r.control_name}</td>
+              <td style={{padding:'10px 12px',textAlign:'center'}}><span style={{padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,background:r.status==='pass'?'rgba(0,255,136,0.15)':r.status==='fail'?'rgba(240,72,72,0.15)':'rgba(255,193,7,0.15)',color:r.status==='pass'?'var(--accent)':r.status==='fail'?'#f04848':'#ffc107'}}>{r.status.toUpperCase()}</span></td>
+              <td style={{padding:'10px 12px',textAlign:'center'}}><span style={{fontSize:11,color:r.severity==='critical'?'#f04848':r.severity==='high'?'#fd7e14':'var(--text-secondary)'}}>{r.severity}</span></td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+
+        {!complianceDashboard && <div style={{textAlign:'center',padding:40,color:'var(--text-secondary)'}}>Loading compliance data...</div>}
+      </div>}
+
+      {/* ─── REMEDIATE ─── */}
+      {view === 'remediate' && <div style={{maxWidth:1100,margin:'0 auto',padding:'80px 24px 24px'}}>
+        <h2 style={{fontSize:24,marginBottom:20}}>✓ Remediation Tracker</h2>
+
+        {/* Dashboard Cards */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:24}}>
+          {[{label:'Open',key:'open',color:'#f04848'},{label:'In Progress',key:'in_progress',color:'#ffc107'},{label:'Verified',key:'verified',color:'var(--accent)'},{label:'Closed',key:'closed',color:'var(--text-secondary)'},{label:'Overdue',key:'overdue',color:'#fd7e14'}].map(s=><div key={s.key} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:16,textAlign:'center'}}>
+            <div style={{fontSize:28,fontWeight:700,color:s.color}}>{remDashboard[s.key]||0}</div>
+            <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:4}}>{s.label}</div>
+          </div>)}
+        </div>
+
+        {/* Create Remediation */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:16,marginBottom:20}}>
+          <div style={{fontWeight:700,marginBottom:12}}>Create Remediation</div>
+          <form onSubmit={async(e)=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);const r=await apiFetch('/remediations',{method:'POST',body:JSON.stringify({bucket_id:parseInt(fd.get('bucket_id') as string)||1,title:fd.get('title'),priority:fd.get('priority')||'medium',description:fd.get('description'),due_date:fd.get('due_date')||undefined})});if(r?.id){loadRemediations();loadRemDashboard();(e.target as HTMLFormElement).reset()}}} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr auto',gap:12,alignItems:'end'}}>
+            <div><label style={{fontSize:12,color:'var(--text-secondary)'}}>Title</label><input name="title" required style={{width:'100%',padding:8,background:'var(--bg-primary)',border:'1px solid var(--border-default)',borderRadius:6,color:'var(--text-primary)'}}/></div>
+            <div><label style={{fontSize:12,color:'var(--text-secondary)'}}>Priority</label><select name="priority" defaultValue="medium" style={{width:'100%',padding:8,background:'var(--bg-primary)',border:'1px solid var(--border-default)',borderRadius:6,color:'var(--text-primary)'}}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+            <div><label style={{fontSize:12,color:'var(--text-secondary)'}}>Due Date</label><input name="due_date" type="date" style={{width:'100%',padding:8,background:'var(--bg-primary)',border:'1px solid var(--border-default)',borderRadius:6,color:'var(--text-primary)'}}/></div>
+            <button type="submit" style={{padding:'8px 16px',background:'var(--accent)',color:'#000',border:'none',borderRadius:8,fontWeight:600,cursor:'pointer'}}>+ Create</button>
+          </form>
+        </div>
+
+        {/* Remediation List */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden'}}>
+          {remediations.items?.length === 0 ? <div style={{padding:40,textAlign:'center',color:'var(--text-secondary)'}}>No remediations yet</div> :
+          remediations.items?.map((r:any)=><div key={r.id} style={{padding:'12px 16px',borderBottom:'1px solid var(--border-default)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:14}}>{r.title}</div>
+              <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:2}}>{r.bucket_name} • {r.priority} priority • {new Date(r.created_at).toLocaleDateString()}</div>
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <span style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:r.status==='open'?'rgba(240,72,72,0.15)':r.status==='in_progress'?'rgba(255,193,7,0.15)':r.status==='verified'?'rgba(0,255,136,0.15)':'rgba(128,128,128,0.15)',color:r.status==='open'?'#f04848':r.status==='in_progress'?'#ffc107':r.status==='verified'?'var(--accent)':'var(--text-secondary)'}}>{r.status.replace('_',' ')}</span>
+              <select value={r.status} onChange={async(e)=>{await apiFetch(`/remediations/${r.id}/status`,{method:'PUT',body:JSON.stringify({status:e.target.value})});loadRemediations();loadRemDashboard()}} style={{padding:'4px 8px',background:'var(--bg-primary)',border:'1px solid var(--border-default)',borderRadius:6,color:'var(--text-primary)',fontSize:12}}>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="verified">Verified</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+          </div>)}
+        </div>
+      </div>}
+
       {/* ─── SETTINGS ─── */}
       {view==='settings' && user && <div style={{padding:'80px 24px 24px',maxWidth:600,margin:'0 auto'}}>
         <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:24}}>Account Settings</h2>
@@ -607,6 +740,38 @@ export default function App() {
           <div style={{marginBottom:16}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>CONFIRM PASSWORD</label>
             <input type="password" value={settingsForm.confirmPassword} onChange={e=>setSettingsForm({...settingsForm,confirmPassword:e.target.value})} placeholder="Confirm new password" style={IS}/></div>
           <button onClick={updateSettings} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>Save Changes</button>
+        </div>
+
+        {/* Organizations */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+          <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Organizations</h3>
+          <form onSubmit={async(e:any)=>{e.preventDefault();const name=e.target.orgName.value.trim();if(!name)return;const slug=name.toLowerCase().replace(/[^a-z0-9]/g,'-');const r=await apiFetch('/orgs',{method:'POST',body:JSON.stringify({name,slug})});if(r?.id)loadOrgs();e.target.reset()}} style={{display:'flex',gap:8,marginBottom:12}}>
+            <input name="orgName" placeholder="Organization name" required style={{flex:1,padding:'8px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,color:'var(--text-primary)',fontSize:12}}/>
+            <button type="submit" style={{background:'var(--accent)',color:'#000',border:'none',borderRadius:8,padding:'8px 14px',fontWeight:600,cursor:'pointer',fontSize:12}}>Create</button>
+          </form>
+          {orgs.length===0?<div style={{fontSize:12,color:'var(--text-muted)',padding:'8px 0'}}>No organizations yet.</div>:
+          orgs.map((o:any)=><div key={o.id} style={{padding:'8px 0',borderTop:'1px solid var(--border-subtle)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontWeight:600,fontSize:13}}>{o.name} <span style={{fontSize:10,color:'var(--text-muted)'}}>({o.slug})</span></span>
+          </div>)}
+        </div>
+
+        {/* Integrations */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+          <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Integrations</h3>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,marginBottom:12}}>
+            {(['slack','jira'] as const).map(t=><div key={t} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:16,flex:'1 1 180px'}}>
+              <div style={{fontWeight:700,textTransform:'capitalize' as const,marginBottom:4,fontSize:13}}>{t}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>{integrations.filter((i:any)=>i.type===t).length} configured</div>
+              <button onClick={()=>{const url=prompt(`Enter ${t} ${t==='slack'?'webhook URL':'base URL'}:`);if(url){apiFetch('/integrations',{method:'POST',body:JSON.stringify({type:t,name:`My ${t}`,config:t==='slack'?{webhook_url:url}:{base_url:url,email:'',api_token:'',project_key:''}})}).then(()=>loadIntegrations())}}} style={{padding:'5px 10px',background:'var(--accent)',color:'#000',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer'}}>+ Add</button>
+            </div>)}
+          </div>
+          {integrations.map((i:any)=><div key={i.id} style={{marginTop:8,padding:'8px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:12}}>{i.name} <span style={{fontSize:10,color:'var(--text-muted)'}}>({i.type})</span></span>
+            <div style={{display:'flex',gap:6}}>
+              <button onClick={async()=>{const r=await apiFetch(`/integrations/${i.id}/test`,{method:'POST'});alert(r?.success?'Test successful!':'Test failed: '+(r?.error||'Unknown'))}} style={{padding:'3px 8px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--text-secondary)',borderRadius:4,fontSize:10,cursor:'pointer'}}>Test</button>
+              <button onClick={async()=>{await apiFetch(`/integrations/${i.id}`,{method:'DELETE'});loadIntegrations()}} style={{padding:'3px 8px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--danger)',borderRadius:4,fontSize:10,cursor:'pointer'}}>Delete</button>
+            </div>
+          </div>)}
         </div>
       </div>}
 
@@ -637,7 +802,7 @@ export default function App() {
       {view==='api-docs' && <div style={{padding:'80px 24px 24px',maxWidth:900,margin:'0 auto'}}>
         <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>REST API</h2>
         <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:32}}>Bearer token or API key auth. SSE for real-time events.</p>
-        {[{m:'GET',p:'/api/v1/files',d:'Full-text + regex file search'},{m:'GET',p:'/api/v1/files/export',d:'Export results as CSV/JSON'},{m:'GET',p:'/api/v1/files/:id/preview',d:'Preview file contents (4KB)'},{m:'POST',p:'/api/v1/searches/saved',d:'Save a search'},{m:'GET',p:'/api/v1/searches/saved',d:'List saved searches'},{m:'DELETE',p:'/api/v1/searches/saved/:id',d:'Delete saved search'},{m:'GET',p:'/api/v1/stats/timeline',d:'Discovery timeline (30d)'},{m:'GET',p:'/api/v1/stats/breakdown',d:'Analytics breakdown'},{m:'GET',p:'/api/v1/buckets',d:'List buckets'},{m:'GET',p:'/api/v1/stats',d:'Database stats'},{m:'GET',p:'/api/v1/events/scans',d:'SSE scan stream'},{m:'POST',p:'/api/v1/scans',d:'Start discovery scan'},{m:'POST',p:'/api/v1/auth/register',d:'Create account'},{m:'POST',p:'/api/v1/auth/login',d:'Login'},{m:'POST',p:'/api/v1/monitor/watchlists',d:'Create watchlist'},{m:'GET',p:'/api/v1/monitor/alerts',d:'List alerts'},{m:'GET',p:'/api/v1/monitor/dashboard',d:'Monitor dashboard'},{m:'POST',p:'/api/v1/monitor/webhooks',d:'Create webhook'},{m:'GET',p:'/api/v1/monitor/webhooks',d:'List webhooks'},{m:'PUT',p:'/api/v1/monitor/webhooks/:id',d:'Update webhook'},{m:'DELETE',p:'/api/v1/monitor/webhooks/:id',d:'Delete webhook'},{m:'POST',p:'/api/v1/monitor/webhooks/:id/test',d:'Test webhook'},{m:'GET',p:'/api/v1/ai/status',d:'AI availability status',ai:true},{m:'POST',p:'/api/v1/ai/classify/:id',d:'Classify bucket files',ai:true},{m:'GET',p:'/api/v1/ai/classifications',d:'Classification summary',ai:true},{m:'POST',p:'/api/v1/ai/risk/:id',d:'Calculate risk score',ai:true},{m:'POST',p:'/api/v1/ai/search',d:'Natural language search',ai:true},{m:'POST',p:'/api/v1/ai/report',d:'Generate security report',ai:true},{m:'POST',p:'/api/v1/ai/suggest-keywords',d:'Smart keyword suggestions',ai:true},{m:'POST',p:'/api/v1/ai/prioritize-alerts',d:'Prioritize alerts with AI',ai:true}].map((ep:any)=><div key={ep.p+ep.m} style={{background:'var(--bg-secondary)',border:`1px solid ${ep.ai?'#a855f720':'var(--border-default)'}`,borderRadius:12,padding:16,marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
+        {[{m:'GET',p:'/api/v1/files',d:'Full-text + regex file search'},{m:'GET',p:'/api/v1/files/export',d:'Export results as CSV/JSON'},{m:'GET',p:'/api/v1/files/:id/preview',d:'Preview file contents (4KB)'},{m:'POST',p:'/api/v1/searches/saved',d:'Save a search'},{m:'GET',p:'/api/v1/searches/saved',d:'List saved searches'},{m:'DELETE',p:'/api/v1/searches/saved/:id',d:'Delete saved search'},{m:'GET',p:'/api/v1/stats/timeline',d:'Discovery timeline (30d)'},{m:'GET',p:'/api/v1/stats/breakdown',d:'Analytics breakdown'},{m:'GET',p:'/api/v1/buckets',d:'List buckets'},{m:'GET',p:'/api/v1/stats',d:'Database stats'},{m:'GET',p:'/api/v1/events/scans',d:'SSE scan stream'},{m:'POST',p:'/api/v1/scans',d:'Start discovery scan'},{m:'POST',p:'/api/v1/auth/register',d:'Create account'},{m:'POST',p:'/api/v1/auth/login',d:'Login'},{m:'POST',p:'/api/v1/monitor/watchlists',d:'Create watchlist'},{m:'GET',p:'/api/v1/monitor/alerts',d:'List alerts'},{m:'GET',p:'/api/v1/monitor/dashboard',d:'Monitor dashboard'},{m:'POST',p:'/api/v1/monitor/webhooks',d:'Create webhook'},{m:'GET',p:'/api/v1/monitor/webhooks',d:'List webhooks'},{m:'PUT',p:'/api/v1/monitor/webhooks/:id',d:'Update webhook'},{m:'DELETE',p:'/api/v1/monitor/webhooks/:id',d:'Delete webhook'},{m:'POST',p:'/api/v1/monitor/webhooks/:id/test',d:'Test webhook'},{m:'GET',p:'/api/v1/ai/status',d:'AI availability status',ai:true},{m:'POST',p:'/api/v1/ai/classify/:id',d:'Classify bucket files',ai:true},{m:'GET',p:'/api/v1/ai/classifications',d:'Classification summary',ai:true},{m:'POST',p:'/api/v1/ai/risk/:id',d:'Calculate risk score',ai:true},{m:'POST',p:'/api/v1/ai/search',d:'Natural language search',ai:true},{m:'POST',p:'/api/v1/ai/report',d:'Generate security report',ai:true},{m:'POST',p:'/api/v1/ai/suggest-keywords',d:'Smart keyword suggestions',ai:true},{m:'POST',p:'/api/v1/ai/prioritize-alerts',d:'Prioritize alerts with AI',ai:true},{m:'POST',p:'/api/v1/orgs',d:'Create organization'},{m:'GET',p:'/api/v1/orgs',d:'List your orgs'},{m:'GET',p:'/api/v1/notifications',d:'List notifications'},{m:'GET',p:'/api/v1/compliance/dashboard',d:'Compliance scores'},{m:'POST',p:'/api/v1/compliance/check/:fid',d:'Run compliance check'},{m:'POST',p:'/api/v1/reports/generate',d:'Generate report'},{m:'POST',p:'/api/v1/remediations',d:'Create remediation'},{m:'GET',p:'/api/v1/remediations/dashboard',d:'Remediation stats'},{m:'POST',p:'/api/v1/integrations',d:'Add integration'}].map((ep:any)=><div key={ep.p+ep.m} style={{background:'var(--bg-secondary)',border:`1px solid ${ep.ai?'#a855f720':'var(--border-default)'}`,borderRadius:12,padding:16,marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
           <span style={{background:ep.m==='GET'?'var(--accent-bg)':'#ff990015',color:ep.m==='GET'?'var(--accent)':'var(--aws)',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,border:`1px solid ${ep.m==='GET'?'rgba(0,232,123,0.2)':'rgba(255,153,0,0.2)'}`}}>{ep.m}</span>
           <span style={{fontSize:13,fontWeight:600}}>{ep.p}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{ep.d}</span>{ep.ai&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:600}}>AI</span>}</div>)}</div>}
     </div>
