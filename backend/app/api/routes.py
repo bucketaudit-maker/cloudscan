@@ -1511,7 +1511,7 @@ def send_via_integration(iid):
 @auth_required_strict
 def create_jira_from_alert(alert_id):
     from backend.app.services.integration_service import create_jira_issue
-    alert = AlertStore.get(alert_id, g.user_id)
+    alert = AlertStore.get_for_user(alert_id, g.user_id)
     if not alert:
         return jsonify({"error": "Alert not found"}), 404
     data = request.get_json(silent=True) or {}
@@ -1665,7 +1665,7 @@ def remediation_dashboard():
 @api.route("/alerts/<int:alert_id>/remediate", methods=["POST"])
 @auth_required_strict
 def create_remediation_from_alert(alert_id):
-    alert = AlertStore.get(alert_id, g.user_id)
+    alert = AlertStore.get_for_user(alert_id, g.user_id)
     if not alert:
         return jsonify({"error": "Alert not found"}), 404
     data = request.get_json(silent=True) or {}
