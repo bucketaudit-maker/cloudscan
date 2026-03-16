@@ -1025,7 +1025,7 @@ class AlertStore:
     @staticmethod
     def mark_read(alert_id: int, user_id: int):
         with get_db() as db:
-            db.execute("UPDATE alerts SET is_read=1 WHERE id=%s AND user_id=%s", (alert_id, user_id))
+            db.execute("UPDATE alerts SET is_read=%s WHERE id=%s AND user_id=%s", (True, alert_id, user_id))
 
     @staticmethod
     def mark_all_read(user_id: int):
@@ -1172,8 +1172,8 @@ class WebhookStore:
     def get_active_for_user(user_id: int) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM webhook_configs WHERE user_id=%s AND is_active=1",
-                (user_id,),
+                "SELECT * FROM webhook_configs WHERE user_id=%s AND is_active=%s",
+                (user_id, True),
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -1189,7 +1189,7 @@ class WebhookStore:
             ).fetchone()
             if row and row["failure_count"] >= 10:
                 db.execute(
-                    "UPDATE webhook_configs SET is_active=0 WHERE id=%s", (webhook_id,)
+                    "UPDATE webhook_configs SET is_active=%s WHERE id=%s", (False, webhook_id)
                 )
 
     @staticmethod
@@ -1376,13 +1376,13 @@ class OrgStore:
         with get_db() as db:
             now = datetime.now(timezone.utc).isoformat()
             row = db.execute(
-                "SELECT * FROM org_invites WHERE token=%s AND accepted=0 AND expires_at > %s",
-                (token, now),
+                "SELECT * FROM org_invites WHERE token=%s AND accepted=%s AND expires_at > %s",
+                (token, False, now),
             ).fetchone()
             if not row:
                 return None
             invite = dict(row)
-            db.execute("UPDATE org_invites SET accepted=1 WHERE id=%s", (invite["id"],))
+            db.execute("UPDATE org_invites SET accepted=%s WHERE id=%s", (True, invite["id"]))
             OrgStore.add_member(invite["org_id"], user_id, invite["role"], invite["invited_by"])
             return OrgStore.get(invite["org_id"])
 
@@ -1390,8 +1390,8 @@ class OrgStore:
     def get_pending_invites(org_id):
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM org_invites WHERE org_id=%s AND accepted=0 ORDER BY created_at DESC",
-                (org_id,),
+                "SELECT * FROM org_invites WHERE org_id=%s AND accepted=%s ORDER BY created_at DESC",
+                (org_id, False),
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -1431,7 +1431,8 @@ class NotificationStore:
             q = "SELECT * FROM notifications WHERE user_id=%s"
             params = [user_id]
             if unread_only:
-                q += " AND is_read=0"
+                q += " AND is_read=%s"
+                params.append(False)
             total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
             q += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
             params.extend([per_page, (page - 1) * per_page])
@@ -1447,16 +1448,16 @@ class NotificationStore:
     def mark_read(notif_id, user_id):
         with get_db() as db:
             db.execute(
-                "UPDATE notifications SET is_read=1 WHERE id=%s AND user_id=%s",
-                (notif_id, user_id),
+                "UPDATE notifications SET is_read=%s WHERE id=%s AND user_id=%s",
+                (True, notif_id, user_id),
             )
 
     @staticmethod
     def mark_all_read(user_id):
         with get_db() as db:
             db.execute(
-                "UPDATE notifications SET is_read=1 WHERE user_id=%s AND is_read=0",
-                (user_id,),
+                "UPDATE notifications SET is_read=%s WHERE user_id=%s AND is_read=%s",
+                (True, user_id, False),
             )
             return db.rowcount
 
@@ -1464,8 +1465,8 @@ class NotificationStore:
     def unread_count(user_id):
         with get_db() as db:
             return db.execute(
-                "SELECT COUNT(*) FROM notifications WHERE user_id=%s AND is_read=0",
-                (user_id,),
+                "SELECT COUNT(*) FROM notifications WHERE user_id=%s AND is_read=%s",
+                (user_id, False),
             ).fetchone()[0]
 
 
@@ -1487,7 +1488,7 @@ class NotificationPrefStore:
     def upsert(user_id, channel, enabled=True, config=None, min_severity='medium'):
         with get_db() as db:
             config_str = json.dumps(config) if isinstance(config, dict) else (config or '{}')
-            enabled_val = 1 if enabled else 0
+            enabled_val = True if enabled else False
             now = datetime.now(timezone.utc).isoformat()
             db.execute("""
                 INSERT INTO notification_prefs (user_id, channel, enabled, config, min_severity, created_at)
@@ -1524,8 +1525,8 @@ class SlackConfigStore:
     def get_for_user(user_id):
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM slack_configs WHERE user_id=%s AND is_active=1",
-                (user_id,),
+                "SELECT * FROM slack_configs WHERE user_id=%s AND is_active=%s",
+                (user_id, True),
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -1692,8 +1693,8 @@ class ReportScheduleStore:
         with get_db() as db:
             now = datetime.now(timezone.utc).isoformat()
             rows = db.execute(
-                "SELECT * FROM report_schedules WHERE is_active=1 AND (next_run IS NULL OR next_run <= %s)",
-                (now,),
+                "SELECT * FROM report_schedules WHERE is_active=%s AND (next_run IS NULL OR next_run <= %s)",
+                (True, now),
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -1785,8 +1786,8 @@ class IntegrationStore:
     def get_active_by_type(user_id, type):
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM integrations WHERE user_id=%s AND type=%s AND is_active=1",
-                (user_id, type),
+                "SELECT * FROM integrations WHERE user_id=%s AND type=%s AND is_active=%s",
+                (user_id, type, True),
             ).fetchall()
             return [dict(r) for r in rows]
 
