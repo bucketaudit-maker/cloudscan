@@ -140,3 +140,28 @@ a:hover { text-decoration: underline; }
 
 .fade-in { animation: fadeIn 0.4s ease-out; }
 .slide-up { animation: slideUp 0.5s ease-out; }
+
+/* ── Toast Notifications ── */
+.toast { animation: toastIn 0.3s ease-out; }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Disabled Buttons ── */
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+/* ── Keyboard Shortcut Badges ── */
+.kbd {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}

@@ -106,6 +106,7 @@ def health():
 # ═══════════════════════════════════════════════════════════════════
 
 @api.route("/auth/register", methods=["POST"])
+@rate_limit
 def register():
     data = request.get_json(silent=True) or {}
     email = data.get("email", "").strip().lower()
@@ -147,6 +148,7 @@ def register():
 
 
 @api.route("/auth/login", methods=["POST"])
+@rate_limit
 def login():
     data = request.get_json(silent=True) or {}
     email = data.get("email", "").strip().lower()
@@ -158,6 +160,7 @@ def login():
     with get_db() as db:
         user = db.execute("SELECT * FROM users WHERE email=%s", (email,)).fetchone()
         if not user or not verify_password(password, user["password_hash"]):
+            logger.warning("Failed login attempt: %s from %s", email, request.remote_addr)
             return jsonify({"error": "Invalid credentials"}), 401
         if not user["is_active"]:
             return jsonify({"error": "Account disabled"}), 403
@@ -188,6 +191,7 @@ def me():
 
 
 @api.route("/auth/forgot-password", methods=["POST"])
+@rate_limit
 def forgot_password():
     data = request.get_json(silent=True) or {}
     email = data.get("email", "").strip().lower()
@@ -275,8 +279,8 @@ def rotate_api_key():
         db.execute("UPDATE users SET api_key=%s WHERE id=%s", (new_key, g.user_id))
     try:
         AuditLogStore.log(g.user_id, "rotate_api_key", "user", g.user_id, None, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"api_key": new_key, "message": "API key rotated successfully"})
 
 
@@ -316,8 +320,8 @@ def update_user_settings():
 
     try:
         AuditLogStore.log(g.user_id, "update_settings", "user", g.user_id, {"username_changed": bool(username), "password_changed": bool(password)}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"message": "Settings updated", "user": dict(user) if user else {}})
 
 
@@ -791,8 +795,8 @@ def create_watchlist():
     )
     try:
         AuditLogStore.log(g.user_id, "create_watchlist", "watchlist", wl.get("id"), {"name": name}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(wl), 201
 
 
@@ -828,8 +832,8 @@ def update_watchlist(wl_id):
         WatchlistStore.update(wl_id, **updates)
     try:
         AuditLogStore.log(g.user_id, "update_watchlist", "watchlist", wl_id, updates, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(WatchlistStore.get(wl_id))
 
 
@@ -842,8 +846,8 @@ def delete_watchlist(wl_id):
     WatchlistStore.delete(wl_id)
     try:
         AuditLogStore.log(g.user_id, "delete_watchlist", "watchlist", wl_id, None, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"message": "Deleted"})
 
 
@@ -921,8 +925,8 @@ def create_webhook():
     wh = WebhookStore.create(g.user_id, name, url, secret, event_types)
     try:
         AuditLogStore.log(g.user_id, "create_webhook", "webhook", wh.get("id"), {"name": name, "url": url}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(wh), 201
 
 
@@ -941,8 +945,8 @@ def update_webhook(wh_id):
     WebhookStore.update(wh_id, g.user_id, **data)
     try:
         AuditLogStore.log(g.user_id, "update_webhook", "webhook", wh_id, data, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(WebhookStore.get(wh_id, g.user_id))
 
 
@@ -953,8 +957,8 @@ def delete_webhook(wh_id):
         return jsonify({"error": "Webhook not found"}), 404
     try:
         AuditLogStore.log(g.user_id, "delete_webhook", "webhook", wh_id, None, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"message": "Deleted"})
 
 
@@ -1198,8 +1202,8 @@ def create_org():
     org = OrgStore.create(g.user_id, name, slug)
     try:
         AuditLogStore.log(g.user_id, "create_org", "organization", org.get("id"), {"name": name, "slug": slug}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(org), 201
 
 @api.route("/orgs", methods=["GET"])
@@ -1236,8 +1240,8 @@ def update_org(org_id):
             db.execute(f"UPDATE organizations SET {','.join(updates)} WHERE id=%s", tuple(params))
     try:
         AuditLogStore.log(g.user_id, "update_org", "organization", org_id, data, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(OrgStore.get(org_id))
 
 @api.route("/orgs/<int:org_id>/invite", methods=["POST"])
@@ -1253,8 +1257,8 @@ def invite_to_org(org_id):
     invite = OrgStore.create_invite(org_id, email, role, g.user_id)
     try:
         AuditLogStore.log(g.user_id, "invite_to_org", "organization", org_id, {"email": email, "role": role}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(invite), 201
 
 @api.route("/orgs/accept-invite", methods=["POST"])
@@ -1278,8 +1282,8 @@ def remove_org_member(org_id, uid):
         return jsonify({"error": "Cannot remove owner or member not found"}), 400
     try:
         AuditLogStore.log(g.user_id, "remove_org_member", "organization", org_id, {"removed_user_id": uid}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"ok": True})
 
 @api.route("/orgs/<int:org_id>/members/<int:uid>", methods=["PUT"])
@@ -1294,8 +1298,8 @@ def update_org_member_role(org_id, uid):
     OrgStore.update_role(org_id, uid, role)
     try:
         AuditLogStore.log(g.user_id, "update_org_member_role", "organization", org_id, {"user_id": uid, "role": role}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"ok": True})
 
 @api.route("/orgs/<int:org_id>/switch", methods=["POST"])
@@ -1510,8 +1514,8 @@ def create_integration():
     integration = IntegrationStore.create(g.user_id, int_type, name, config)
     try:
         AuditLogStore.log(g.user_id, "create_integration", "integration", integration.get("id"), {"type": int_type, "name": name}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(integration), 201
 
 @api.route("/integrations", methods=["GET"])
@@ -1535,8 +1539,8 @@ def update_integration(iid):
     IntegrationStore.update(iid, g.user_id, **data)
     try:
         AuditLogStore.log(g.user_id, "update_integration", "integration", iid, data, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     integration = IntegrationStore.get(iid, g.user_id)
     return jsonify(integration)
 
@@ -1546,8 +1550,8 @@ def delete_integration(iid):
     IntegrationStore.delete(iid, g.user_id)
     try:
         AuditLogStore.log(g.user_id, "delete_integration", "integration", iid, None, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"ok": True})
 
 @api.route("/integrations/<int:iid>/test", methods=["POST"])
@@ -1766,8 +1770,8 @@ def create_tag():
     tag = TagStore.create(g.user_id, name, data.get("color", "#6b7280"))
     try:
         AuditLogStore.log(g.user_id, "create_tag", "tag", tag.get("id"), {"name": name}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(tag), 201
 
 
@@ -1785,8 +1789,8 @@ def update_tag(tag_id):
         return jsonify({"error": "Tag not found or nothing to update"}), 404
     try:
         AuditLogStore.log(g.user_id, "update_tag", "tag", tag_id, data, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"ok": True})
 
 
@@ -1797,8 +1801,8 @@ def delete_tag(tag_id):
         return jsonify({"error": "Tag not found"}), 404
     try:
         AuditLogStore.log(g.user_id, "delete_tag", "tag", tag_id, None, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"message": "Deleted"})
 
 
@@ -1812,8 +1816,8 @@ def tag_bucket(bucket_id):
     TagStore.tag_bucket(g.user_id, bucket_id, tag_id)
     try:
         AuditLogStore.log(g.user_id, "tag_bucket", "bucket", bucket_id, {"tag_id": tag_id}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"ok": True}), 201
 
 
@@ -1849,8 +1853,8 @@ def toggle_bookmark():
         return jsonify(result), 400
     try:
         AuditLogStore.log(g.user_id, "toggle_bookmark", "bookmark", None, data, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(result)
 
 
@@ -1905,8 +1909,8 @@ def create_scan_schedule():
     )
     try:
         AuditLogStore.log(g.user_id, "create_scan_schedule", "scan_schedule", schedule.get("id"), {"name": name}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(schedule), 201
 
 
@@ -1933,8 +1937,8 @@ def update_scan_schedule(sid):
         return jsonify({"error": "Not found or nothing to update"}), 404
     try:
         AuditLogStore.log(g.user_id, "update_scan_schedule", "scan_schedule", sid, data, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(ScanScheduleStore.get(sid, g.user_id))
 
 
@@ -1945,8 +1949,8 @@ def delete_scan_schedule(sid):
         return jsonify({"error": "Not found"}), 404
     try:
         AuditLogStore.log(g.user_id, "delete_scan_schedule", "scan_schedule", sid, None, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"message": "Deleted"})
 
 
@@ -1960,8 +1964,8 @@ def toggle_scan_schedule(sid):
     ScanScheduleStore.update(sid, g.user_id, is_active=new_active)
     try:
         AuditLogStore.log(g.user_id, "toggle_scan_schedule", "scan_schedule", sid, {"is_active": new_active}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"message": "Toggled", "is_active": new_active})
 
 
@@ -1983,8 +1987,8 @@ def run_scan_schedule(sid):
     ScanScheduleStore.mark_run(sid, job.get("id"), schedule.get("frequency", "daily"))
     try:
         AuditLogStore.log(g.user_id, "run_scan_schedule", "scan_schedule", sid, {"job_id": job.get("id")}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify(job), 202
 
 
@@ -2004,12 +2008,12 @@ def bulk_resolve_alerts():
         try:
             AlertStore.resolve(aid, g.user_id)
             resolved += 1
-        except:
+        except Exception:
             pass
     try:
         AuditLogStore.log(g.user_id, "bulk_resolve_alerts", "alert", None, {"count": resolved, "ids": alert_ids}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"resolved": resolved, "total": len(alert_ids)})
 
 
@@ -2025,7 +2029,7 @@ def bulk_read_alerts():
         try:
             AlertStore.mark_read(aid, g.user_id)
             marked += 1
-        except:
+        except Exception:
             pass
     return jsonify({"marked_read": marked, "total": len(alert_ids)})
 
@@ -2045,12 +2049,12 @@ def bulk_update_remediation_status():
         try:
             if RemediationStore.update_status(rid, g.user_id, status):
                 updated += 1
-        except:
+        except Exception:
             pass
     try:
         AuditLogStore.log(g.user_id, "bulk_update_remediation_status", "remediation", None, {"count": updated, "status": status}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"updated": updated, "total": len(ids)})
 
 
@@ -2067,12 +2071,12 @@ def bulk_assign_remediations():
         try:
             if RemediationStore.assign(rid, g.user_id, assigned_to):
                 updated += 1
-        except:
+        except Exception:
             pass
     try:
         AuditLogStore.log(g.user_id, "bulk_assign_remediations", "remediation", None, {"count": updated, "assigned_to": assigned_to}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"assigned": updated, "total": len(ids)})
 
 
@@ -2088,12 +2092,12 @@ def bulk_close_remediations():
         try:
             if RemediationStore.update_status(rid, g.user_id, "closed"):
                 closed += 1
-        except:
+        except Exception:
             pass
     try:
         AuditLogStore.log(g.user_id, "bulk_close_remediations", "remediation", None, {"count": closed}, request.remote_addr)
-    except:
-        pass
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
     return jsonify({"closed": closed, "total": len(ids)})
 
 
