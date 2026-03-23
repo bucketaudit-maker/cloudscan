@@ -3234,14 +3234,24 @@ class DashboardStatsStore:
             params = [user_id, user_id]
 
             # Average time to close
-            closed_rows = db.execute(f"""
-                SELECT priority,
-                       COUNT(*) as count,
-                       AVG(CASE WHEN completed_at IS NOT NULL AND created_at IS NOT NULL
-                           THEN julianday(completed_at) - julianday(created_at) END) as avg_days_to_close
-                FROM remediations {base_where} AND status='closed' AND completed_at IS NOT NULL
-                GROUP BY priority
-            """, tuple(params)).fetchall()
+            if settings.is_postgres:
+                closed_rows = db.execute(f"""
+                    SELECT priority,
+                           COUNT(*) as count,
+                           AVG(CASE WHEN completed_at IS NOT NULL AND created_at IS NOT NULL
+                               THEN EXTRACT(EPOCH FROM (completed_at - created_at)) / 86400.0 END) as avg_days_to_close
+                    FROM remediations {base_where} AND status='closed' AND completed_at IS NOT NULL
+                    GROUP BY priority
+                """, tuple(params)).fetchall()
+            else:
+                closed_rows = db.execute(f"""
+                    SELECT priority,
+                           COUNT(*) as count,
+                           AVG(CASE WHEN completed_at IS NOT NULL AND created_at IS NOT NULL
+                               THEN julianday(completed_at) - julianday(created_at) END) as avg_days_to_close
+                    FROM remediations {base_where} AND status='closed' AND completed_at IS NOT NULL
+                    GROUP BY priority
+                """, tuple(params)).fetchall()
 
             # Overdue count by priority
             now = datetime.now(timezone.utc).isoformat()
@@ -3253,13 +3263,22 @@ class DashboardStatsStore:
             """, tuple(overdue_params)).fetchall()
 
             # Open aging
-            aging_rows = db.execute(f"""
-                SELECT
-                    SUM(CASE WHEN julianday('now') - julianday(created_at) <= 7 THEN 1 ELSE 0 END) as this_week,
-                    SUM(CASE WHEN julianday('now') - julianday(created_at) BETWEEN 7 AND 30 THEN 1 ELSE 0 END) as this_month,
-                    SUM(CASE WHEN julianday('now') - julianday(created_at) > 30 THEN 1 ELSE 0 END) as older
-                FROM remediations {base_where} AND status NOT IN ('closed','verified')
-            """, tuple(params)).fetchone()
+            if settings.is_postgres:
+                aging_rows = db.execute(f"""
+                    SELECT
+                        SUM(CASE WHEN EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0 <= 7 THEN 1 ELSE 0 END) as this_week,
+                        SUM(CASE WHEN EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0 BETWEEN 7 AND 30 THEN 1 ELSE 0 END) as this_month,
+                        SUM(CASE WHEN EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0 > 30 THEN 1 ELSE 0 END) as older
+                    FROM remediations {base_where} AND status NOT IN ('closed','verified')
+                """, tuple(params)).fetchone()
+            else:
+                aging_rows = db.execute(f"""
+                    SELECT
+                        SUM(CASE WHEN julianday('now') - julianday(created_at) <= 7 THEN 1 ELSE 0 END) as this_week,
+                        SUM(CASE WHEN julianday('now') - julianday(created_at) BETWEEN 7 AND 30 THEN 1 ELSE 0 END) as this_month,
+                        SUM(CASE WHEN julianday('now') - julianday(created_at) > 30 THEN 1 ELSE 0 END) as older
+                    FROM remediations {base_where} AND status NOT IN ('closed','verified')
+                """, tuple(params)).fetchone()
 
             return {
                 "time_to_close": {r["priority"]: {"count": r["count"], "avg_days": round(r["avg_days_to_close"] or 0, 1)} for r in closed_rows},
@@ -3292,14 +3311,24 @@ class DashboardStatsStore:
             """).fetchall()
 
             # Recent activity
-            recent_scans = db.execute("""
-                SELECT COUNT(*) as total,
-                       SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
-                       SUM(buckets_found) as buckets_found,
-                       SUM(files_indexed) as files_indexed
-                FROM scan_jobs
-                WHERE created_at >= datetime('now', '-7 days')
-            """).fetchone()
+            if settings.is_postgres:
+                recent_scans = db.execute("""
+                    SELECT COUNT(*) as total,
+                           SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+                           SUM(buckets_found) as buckets_found,
+                           SUM(files_indexed) as files_indexed
+                    FROM scan_jobs
+                    WHERE created_at >= NOW() - INTERVAL '7 days'
+                """).fetchone()
+            else:
+                recent_scans = db.execute("""
+                    SELECT COUNT(*) as total,
+                           SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+                           SUM(buckets_found) as buckets_found,
+                           SUM(files_indexed) as files_indexed
+                    FROM scan_jobs
+                    WHERE created_at >= datetime('now', '-7 days')
+                """).fetchone()
 
             # Alert severity breakdown (unresolved)
             alert_sev = db.execute(f"""
