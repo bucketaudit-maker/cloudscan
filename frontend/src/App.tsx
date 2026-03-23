@@ -122,6 +122,9 @@ export default function App() {
   const [bucketSearch, setBucketSearch] = useState('')
   const [bucketStatusFilter, setBucketStatusFilter] = useState('')
   const [bucketProviderFilter, setBucketProviderFilter] = useState('')
+  const [expandedApi, setExpandedApi] = useState<string|null>(null)
+  const [apiFilterTag, setApiFilterTag] = useState('')
+  const [apiSearchQ, setApiSearchQ] = useState('')
   // Sprint 6 state: 2FA, Drift, Alert Rules, Dashboard
   const [twoFaStatus, setTwoFaStatus] = useState<any>(null)
   const [twoFaSetup, setTwoFaSetup] = useState<any>(null)
@@ -1241,12 +1244,208 @@ export default function App() {
       </div>}
 
       {/* ─── API DOCS ─── */}
-      {view==='api-docs' && <div style={{padding:'80px 24px 24px',maxWidth:900,margin:'0 auto'}}>
-        <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>REST API</h2>
-        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:32}}>Bearer token or API key auth. SSE for real-time events.</p>
-        {[{m:'GET',p:'/api/v1/files',d:'Full-text + regex file search'},{m:'GET',p:'/api/v1/files/export',d:'Export results as CSV/JSON'},{m:'GET',p:'/api/v1/files/:id/preview',d:'Preview file contents (4KB)'},{m:'POST',p:'/api/v1/searches/saved',d:'Save a search'},{m:'GET',p:'/api/v1/searches/saved',d:'List saved searches'},{m:'DELETE',p:'/api/v1/searches/saved/:id',d:'Delete saved search'},{m:'GET',p:'/api/v1/stats/timeline',d:'Discovery timeline (30d)'},{m:'GET',p:'/api/v1/stats/breakdown',d:'Analytics breakdown'},{m:'GET',p:'/api/v1/buckets',d:'List buckets'},{m:'GET',p:'/api/v1/stats',d:'Database stats'},{m:'GET',p:'/api/v1/events/scans',d:'SSE scan stream'},{m:'POST',p:'/api/v1/scans',d:'Start discovery scan'},{m:'POST',p:'/api/v1/auth/register',d:'Create account'},{m:'POST',p:'/api/v1/auth/login',d:'Login'},{m:'POST',p:'/api/v1/monitor/watchlists',d:'Create watchlist'},{m:'GET',p:'/api/v1/monitor/alerts',d:'List alerts'},{m:'GET',p:'/api/v1/monitor/dashboard',d:'Monitor dashboard'},{m:'POST',p:'/api/v1/monitor/webhooks',d:'Create webhook'},{m:'GET',p:'/api/v1/monitor/webhooks',d:'List webhooks'},{m:'PUT',p:'/api/v1/monitor/webhooks/:id',d:'Update webhook'},{m:'DELETE',p:'/api/v1/monitor/webhooks/:id',d:'Delete webhook'},{m:'POST',p:'/api/v1/monitor/webhooks/:id/test',d:'Test webhook'},{m:'GET',p:'/api/v1/ai/status',d:'AI availability status',ai:true},{m:'POST',p:'/api/v1/ai/classify/:id',d:'Classify bucket files',ai:true},{m:'GET',p:'/api/v1/ai/classifications',d:'Classification summary',ai:true},{m:'POST',p:'/api/v1/ai/risk/:id',d:'Calculate risk score',ai:true},{m:'POST',p:'/api/v1/ai/search',d:'Natural language search',ai:true},{m:'POST',p:'/api/v1/ai/report',d:'Generate security report',ai:true},{m:'POST',p:'/api/v1/ai/suggest-keywords',d:'Smart keyword suggestions',ai:true},{m:'POST',p:'/api/v1/ai/prioritize-alerts',d:'Prioritize alerts with AI',ai:true},{m:'POST',p:'/api/v1/orgs',d:'Create organization'},{m:'GET',p:'/api/v1/orgs',d:'List your orgs'},{m:'GET',p:'/api/v1/notifications',d:'List notifications'},{m:'GET',p:'/api/v1/compliance/dashboard',d:'Compliance scores'},{m:'POST',p:'/api/v1/compliance/check/:fid',d:'Run compliance check'},{m:'POST',p:'/api/v1/reports/generate',d:'Generate report'},{m:'POST',p:'/api/v1/remediations',d:'Create remediation'},{m:'GET',p:'/api/v1/remediations/dashboard',d:'Remediation stats'},{m:'POST',p:'/api/v1/integrations',d:'Add integration'}].map((ep:any)=><div key={ep.p+ep.m} style={{background:'var(--bg-secondary)',border:`1px solid ${ep.ai?'#a855f720':'var(--border-default)'}`,borderRadius:12,padding:16,marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
-          <span style={{background:ep.m==='GET'?'var(--accent-bg)':'#ff990015',color:ep.m==='GET'?'var(--accent)':'var(--aws)',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,border:`1px solid ${ep.m==='GET'?'rgba(0,232,123,0.2)':'rgba(255,153,0,0.2)'}`}}>{ep.m}</span>
-          <span style={{fontSize:13,fontWeight:600}}>{ep.p}</span><span style={{fontSize:12,color:'var(--text-tertiary)'}}>{ep.d}</span>{ep.ai&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:600}}>AI</span>}</div>)}</div>}
+      {view==='api-docs' && (()=>{
+        const MC:any={GET:{bg:'var(--accent-bg)',c:'var(--accent)',bc:'rgba(0,232,123,0.2)'},POST:{bg:'#ff990015',c:'#ff9900',bc:'rgba(255,153,0,0.2)'},PUT:{bg:'#4a9eff15',c:'#4a9eff',bc:'rgba(74,158,255,0.2)'},DELETE:{bg:'#f0484815',c:'#f04848',bc:'rgba(240,72,72,0.2)'}}
+        const endpoints:any[]=[
+          {tag:'Auth',m:'POST',p:'/auth/register',d:'Create a new account',auth:'none',
+            params:[{n:'email',t:'string',r:true,d:'User email address'},{n:'username',t:'string',r:true,d:'Display name (min 2 chars)'},{n:'password',t:'string',r:true,d:'Password (min 6 chars)'}],
+            reqSample:'{\n  "email": "user@example.com",\n  "username": "johndoe",\n  "password": "securePass123"\n}',
+            resSample:'{\n  "token": "eyJhbGci...jwt_token",\n  "user": {\n    "id": 1,\n    "email": "user@example.com",\n    "username": "johndoe",\n    "tier": "free",\n    "api_key": "cs_a1b2c3d4e5f6..."\n  }\n}',
+            errors:[{c:400,d:'Email already registered or invalid input'}]},
+          {tag:'Auth',m:'POST',p:'/auth/login',d:'Login with credentials',auth:'none',
+            params:[{n:'email',t:'string',r:true,d:'Account email'},{n:'password',t:'string',r:true,d:'Account password'}],
+            reqSample:'{\n  "email": "user@example.com",\n  "password": "securePass123"\n}',
+            resSample:'{\n  "token": "eyJhbGci...jwt_token",\n  "user": {\n    "id": 1,\n    "email": "user@example.com",\n    "username": "johndoe",\n    "tier": "free"\n  }\n}',
+            notes:'If 2FA is enabled, returns { "requires_2fa": true, "temp_token": "..." } instead. Use /auth/2fa/verify to complete login.',
+            errors:[{c:401,d:'Invalid email or password'},{c:429,d:'Too many login attempts'}]},
+          {tag:'Auth',m:'GET',p:'/auth/me',d:'Get current user profile',auth:'strict',
+            resSample:'{\n  "id": 1,\n  "email": "user@example.com",\n  "username": "johndoe",\n  "tier": "free",\n  "api_key": "cs_a1b2c3...",\n  "totp_enabled": false,\n  "queries_today": 12,\n  "joined_at": "2026-03-01T00:00:00Z"\n}',
+            errors:[{c:401,d:'Authentication required'}]},
+          {tag:'Auth',m:'POST',p:'/auth/2fa/setup',d:'Initialize TOTP 2FA setup',auth:'strict',
+            resSample:'{\n  "secret": "JBSWY3DPEHPK3PXP",\n  "uri": "otpauth://totp/CloudScan:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=CloudScan"\n}',
+            notes:'Add the secret to an authenticator app, then confirm with /auth/2fa/confirm.',
+            errors:[{c:401,d:'Authentication required'},{c:400,d:'2FA already enabled'}]},
+          {tag:'Auth',m:'POST',p:'/auth/2fa/confirm',d:'Confirm 2FA with TOTP code',auth:'strict',
+            params:[{n:'code',t:'string',r:true,d:'6-digit TOTP code from authenticator app'}],
+            reqSample:'{ "code": "123456" }',
+            resSample:'{\n  "success": true,\n  "backup_codes": ["abc12345", "def67890", "ghi13579", "jkl24680"]\n}',
+            notes:'Save backup codes securely — they cannot be retrieved again.',
+            errors:[{c:400,d:'Invalid TOTP code'},{c:401,d:'Authentication required'}]},
+          {tag:'Auth',m:'POST',p:'/auth/2fa/verify',d:'Complete 2FA login',auth:'none',
+            params:[{n:'temp_token',t:'string',r:true,d:'Temporary token from login response'},{n:'code',t:'string',r:true,d:'6-digit TOTP code or backup code'}],
+            reqSample:'{\n  "temp_token": "temp_abc123...",\n  "code": "123456"\n}',
+            resSample:'{\n  "token": "eyJhbGci...jwt_token",\n  "user": { "id": 1, "username": "johndoe" }\n}',
+            errors:[{c:401,d:'Invalid or expired temp_token'},{c:401,d:'Invalid TOTP code'}]},
+          {tag:'Auth',m:'POST',p:'/auth/rotate-key',d:'Generate new API key',auth:'strict',
+            resSample:'{ "api_key": "cs_new_key_a1b2c3d4e5f6..." }',
+            notes:'Old API key is immediately invalidated.',
+            errors:[{c:401,d:'Authentication required'}]},
+          {tag:'Files',m:'GET',p:'/files',d:'Full-text + regex file search',auth:'optional',
+            params:[{n:'q',t:'string',r:false,d:'Search query (supports wildcards: *.env)'},{n:'regex',t:'string',r:false,d:'Regex pattern on file path'},{n:'ext',t:'string',r:false,d:'Filter by extension (e.g. sql, csv)'},{n:'exclude_ext',t:'string',r:false,d:'Exclude extension'},{n:'provider',t:'string',r:false,d:'aws | azure | gcp | digitalocean | alibaba'},{n:'bucket',t:'string',r:false,d:'Filter by bucket name'},{n:'sort',t:'string',r:false,d:'relevance | newest | oldest | largest | smallest'},{n:'min_size',t:'integer',r:false,d:'Minimum file size in bytes'},{n:'max_size',t:'integer',r:false,d:'Maximum file size in bytes'},{n:'date_from',t:'date',r:false,d:'Files modified after this date'},{n:'date_to',t:'date',r:false,d:'Files modified before this date'},{n:'page',t:'integer',r:false,d:'Page number (default: 1)'},{n:'per_page',t:'integer',r:false,d:'Results per page (default: 50, max: 200)'}],
+            resSample:'{\n  "items": [\n    {\n      "id": 42,\n      "bucket_id": 5,\n      "name": "config/database.env",\n      "extension": "env",\n      "size": 1234,\n      "content_type": "text/plain",\n      "last_modified": "2026-03-15T10:30:00Z",\n      "ai_classification": "credentials",\n      "bucket_name": "company-backups",\n      "provider_name": "aws"\n    }\n  ],\n  "total": 156,\n  "page": 1,\n  "per_page": 50\n}',
+            errors:[{c:429,d:'Rate limit exceeded (Free: 100/day, Premium: 5K, Enterprise: 50K)'}]},
+          {tag:'Files',m:'GET',p:'/files/export',d:'Export search results as CSV or JSON',auth:'optional',
+            params:[{n:'format',t:'string',r:true,d:'csv | json'},{n:'q',t:'string',r:false,d:'Search query'},{n:'ext',t:'string',r:false,d:'Extension filter'},{n:'provider',t:'string',r:false,d:'Provider filter'}],
+            resSample:'# CSV format:\nid,name,extension,size,bucket,provider,url\n42,config/database.env,env,1234,company-backups,aws,https://...',
+            notes:'Same search params as GET /files. CSV limited to 10,000 rows.',
+            errors:[{c:429,d:'Rate limit exceeded'}]},
+          {tag:'Files',m:'GET',p:'/files/:id/preview',d:'Preview file content (first 4KB)',auth:'optional',
+            params:[{n:'file_id',t:'integer',r:true,d:'File ID (path param)'}],
+            resSample:'{\n  "content": "DB_HOST=prod-db.example.com\\nDB_PASS=s3cret...",\n  "content_type": "text/plain",\n  "truncated": true\n}',
+            notes:'Only works for text-based content types. Binary files return 400.',
+            errors:[{c:404,d:'File not found'},{c:400,d:'Binary file, cannot preview'}]},
+          {tag:'Buckets',m:'GET',p:'/buckets',d:'List cloud storage buckets',auth:'optional',
+            params:[{n:'provider',t:'string',r:false,d:'aws | azure | gcp | digitalocean | alibaba'},{n:'status',t:'string',r:false,d:'open | closed | partial'},{n:'search',t:'string',r:false,d:'Search bucket names'},{n:'tag_id',t:'integer',r:false,d:'Filter by tag'},{n:'page',t:'integer',r:false,d:'Page number'},{n:'per_page',t:'integer',r:false,d:'Results per page (max: 200)'}],
+            resSample:'{\n  "items": [\n    {\n      "id": 5,\n      "name": "company-backups",\n      "provider_name": "aws",\n      "region": "us-east-1",\n      "status": "open",\n      "file_count": 342,\n      "total_size_bytes": 52428800,\n      "risk_score": 85,\n      "risk_level": "critical",\n      "first_seen": "2026-03-01T00:00:00Z"\n    }\n  ],\n  "total": 1200,\n  "page": 1,\n  "per_page": 50\n}',
+            errors:[{c:429,d:'Rate limit exceeded'}]},
+          {tag:'Buckets',m:'GET',p:'/buckets/:id',d:'Get bucket details with files',auth:'optional',
+            params:[{n:'bucket_id',t:'integer',r:true,d:'Bucket ID (path param)'},{n:'page',t:'integer',r:false,d:'File page'},{n:'per_page',t:'integer',r:false,d:'Files per page (default: 100)'}],
+            resSample:'{\n  "id": 5,\n  "name": "company-backups",\n  "provider_name": "aws",\n  "region": "us-east-1",\n  "url": "https://company-backups.s3.amazonaws.com",\n  "status": "open",\n  "file_count": 342,\n  "risk_score": 85,\n  "risk_level": "critical",\n  "files": [\n    { "id": 42, "name": "database.env", "size": 1234 }\n  ],\n  "files_total": 342\n}',
+            errors:[{c:404,d:'Bucket not found'}]},
+          {tag:'Scans',m:'POST',p:'/scans',d:'Start a discovery scan',auth:'optional',
+            params:[{n:'keywords',t:'array',r:false,d:'Bucket name keywords to try'},{n:'companies',t:'array',r:false,d:'Company names for pattern generation'},{n:'providers',t:'array',r:false,d:'Target providers (default: all)'},{n:'max_names',t:'integer',r:false,d:'Max name permutations (default: 1000, max: 50000)'},{n:'regions_per_provider',t:'integer',r:false,d:'Regions to check per provider (default: 3)'}],
+            reqSample:'{\n  "keywords": ["backup", "staging", "dev"],\n  "companies": ["acme"],\n  "providers": ["aws", "gcp"],\n  "max_names": 500\n}',
+            resSample:'{\n  "id": 15,\n  "scan_type": "discovery",\n  "status": "running",\n  "config": { "keywords": ["backup"], "providers": ["aws"] },\n  "created_at": "2026-03-22T10:00:00Z"\n}',
+            notes:'Returns 202. Monitor via SSE at /events/scans or poll GET /scans/:id.',
+            errors:[{c:400,d:'Invalid provider name'},{c:429,d:'Rate limit exceeded'}]},
+          {tag:'Scans',m:'GET',p:'/scans',d:'List recent scan jobs',auth:'optional',
+            resSample:'{\n  "items": [\n    {\n      "id": 15,\n      "status": "completed",\n      "names_checked": 500,\n      "buckets_found": 23,\n      "buckets_open": 5,\n      "files_indexed": 1842,\n      "created_at": "2026-03-22T10:00:00Z",\n      "completed_at": "2026-03-22T10:05:30Z"\n    }\n  ]\n}',
+            notes:'Returns the 50 most recent scans.'},
+          {tag:'Scans',m:'POST',p:'/scans/:id/cancel',d:'Cancel a running scan',auth:'optional',
+            params:[{n:'job_id',t:'integer',r:true,d:'Scan job ID (path param)'}],
+            resSample:'{ "success": true }',
+            errors:[{c:404,d:'Scan job not found or not running'}]},
+          {tag:'Scans',m:'GET',p:'/events/scans',d:'Real-time scan events (SSE)',auth:'none',
+            resSample:'event: connected\ndata: {"msg":"connected"}\n\nevent: progress\ndata: {"names_checked":100,"names_total":500,"buckets_found":5,"buckets_open":2}\n\nevent: bucket_found\ndata: {"bucket":{"name":"staging-backup","provider":"aws","status":"open","file_count":42}}\n\nevent: scan_complete\ndata: {"job_id":15,"stats":{"buckets_found":23,"buckets_open":5}}',
+            notes:'Server-Sent Events stream. Events: connected, progress, bucket_found, scan_started, scan_complete, scan_cancelled, drift_detected, error.'},
+          {tag:'Monitoring',m:'POST',p:'/monitor/watchlists',d:'Create a watchlist for continuous monitoring',auth:'strict',
+            params:[{n:'name',t:'string',r:true,d:'Watchlist name'},{n:'keywords',t:'array',r:true,d:'Keywords to monitor'},{n:'companies',t:'array',r:false,d:'Company names'},{n:'providers',t:'array',r:false,d:'Target providers'},{n:'scan_interval_hours',t:'integer',r:false,d:'Scan frequency in hours (default: 24)'}],
+            reqSample:'{\n  "name": "Production Buckets",\n  "keywords": ["prod", "production"],\n  "companies": ["acme-corp"],\n  "scan_interval_hours": 12\n}',
+            resSample:'{\n  "id": 3,\n  "name": "Production Buckets",\n  "keywords": ["prod", "production"],\n  "scan_interval_hours": 12,\n  "created_at": "2026-03-22T10:00:00Z"\n}',
+            errors:[{c:400,d:'Name and keywords required'},{c:401,d:'Authentication required'}]},
+          {tag:'Monitoring',m:'GET',p:'/monitor/alerts',d:'List monitoring alerts',auth:'strict',
+            params:[{n:'unread',t:'boolean',r:false,d:'Filter unread only'},{n:'severity',t:'string',r:false,d:'critical | high | medium | low | info'},{n:'page',t:'integer',r:false,d:'Page number'},{n:'per_page',t:'integer',r:false,d:'Results per page'}],
+            resSample:'{\n  "items": [\n    {\n      "id": 7,\n      "bucket_id": 5,\n      "severity": "critical",\n      "title": "New open bucket: company-backups",\n      "is_read": false,\n      "is_resolved": false,\n      "created_at": "2026-03-22T10:05:00Z"\n    }\n  ],\n  "total": 42,\n  "unread_count": 8\n}',
+            errors:[{c:401,d:'Authentication required'}]},
+          {tag:'Monitoring',m:'POST',p:'/monitor/webhooks',d:'Create a webhook for alert delivery',auth:'strict',
+            params:[{n:'name',t:'string',r:true,d:'Webhook name'},{n:'url',t:'string',r:true,d:'Webhook URL (https)'},{n:'secret',t:'string',r:false,d:'HMAC signing secret'},{n:'event_types',t:'array',r:false,d:'Severity filter (default: ["critical","high"])'}],
+            reqSample:'{\n  "name": "Slack Alerts",\n  "url": "https://hooks.slack.com/services/T.../B.../xxx",\n  "event_types": ["critical", "high", "medium"]\n}',
+            resSample:'{ "id": 2, "name": "Slack Alerts", "is_active": true }',
+            errors:[{c:400,d:'Name and URL required'},{c:401,d:'Authentication required'}]},
+          {tag:'AI',m:'POST',p:'/ai/search',d:'Natural language search',auth:'optional',ai:true,
+            params:[{n:'query',t:'string',r:true,d:'Natural language search query'}],
+            reqSample:'{ "query": "find database backups from tech companies" }',
+            resSample:'{\n  "interpretation": "Searching for database backup files from technology companies",\n  "search_params": { "q": "backup.sql OR dump.sql", "ext": "sql" },\n  "results": { "items": [...], "total": 23 }\n}',
+            errors:[{c:400,d:'Query required'},{c:503,d:'AI provider unavailable'}]},
+          {tag:'AI',m:'POST',p:'/ai/classify/:id',d:'Classify bucket files using AI',auth:'optional',ai:true,
+            params:[{n:'bucket_id',t:'integer',r:true,d:'Bucket ID (path param)'}],
+            resSample:'{\n  "classified": 42,\n  "classifications": [\n    { "file_id": 1, "classification": "credentials", "confidence": 0.95 },\n    { "file_id": 2, "classification": "pii", "confidence": 0.87 }\n  ]\n}',
+            notes:'Classifications: credentials, pii, financial, medical, infrastructure, source_code, database, generic.',
+            errors:[{c:404,d:'Bucket not found'},{c:503,d:'AI provider unavailable'}]},
+          {tag:'AI',m:'POST',p:'/ai/risk/:id',d:'Calculate bucket risk score',auth:'optional',ai:true,
+            params:[{n:'bucket_id',t:'integer',r:true,d:'Bucket ID (path param)'}],
+            resSample:'{\n  "risk_score": 85,\n  "risk_level": "critical",\n  "factors": [\n    "Contains credentials files (.env, .pem)",\n    "Large number of exposed files (342)",\n    "PII detected in 12 files"\n  ]\n}',
+            errors:[{c:404,d:'Bucket not found'},{c:503,d:'AI provider unavailable'}]},
+          {tag:'AI',m:'POST',p:'/ai/report',d:'Generate AI security report',auth:'strict',ai:true,
+            resSample:'{\n  "report": "## CloudScan Security Report\\n\\n### Executive Summary\\n...",\n  "generated_at": "2026-03-22T10:00:00Z"\n}',
+            errors:[{c:401,d:'Authentication required'},{c:503,d:'AI provider unavailable'}]},
+          {tag:'Drift',m:'GET',p:'/drift/diffs',d:'List scan drift changes',auth:'strict',
+            params:[{n:'severity',t:'string',r:false,d:'critical | high | medium | low | info'},{n:'unreviewed',t:'boolean',r:false,d:'Only unreviewed diffs'},{n:'page',t:'integer',r:false,d:'Page number'},{n:'per_page',t:'integer',r:false,d:'Results per page'}],
+            resSample:'{\n  "items": [\n    {\n      "id": 1,\n      "bucket_id": 5,\n      "diff_type": "files_added",\n      "summary": "15 new files detected in company-backups",\n      "severity": "high",\n      "is_reviewed": false,\n      "created_at": "2026-03-22T10:05:00Z"\n    }\n  ],\n  "total": 8\n}',
+            errors:[{c:401,d:'Authentication required'}]},
+          {tag:'Drift',m:'GET',p:'/drift/diffs/summary',d:'Summary of all drift changes',auth:'optional',
+            resSample:'{\n  "total": 24,\n  "unreviewed": 8,\n  "by_severity": { "critical": 2, "high": 5, "medium": 10, "low": 7 },\n  "by_type": { "files_added": 8, "status_change": 5, "new_bucket": 3 }\n}'},
+          {tag:'Alert Rules',m:'POST',p:'/alert-rules',d:'Create custom alert rule',auth:'strict',
+            params:[{n:'name',t:'string',r:true,d:'Rule name'},{n:'conditions',t:'array',r:true,d:'Array of {type, value} conditions (AND logic)'},{n:'severity',t:'string',r:false,d:'Rule severity (default: medium)'},{n:'description',t:'string',r:false,d:'Rule description'}],
+            reqSample:'{\n  "name": "Credential files in open buckets",\n  "severity": "critical",\n  "conditions": [\n    { "type": "file_extension", "value": "env" },\n    { "type": "bucket_status", "value": "open" }\n  ]\n}',
+            resSample:'{ "id": 3, "name": "Credential files in open buckets", "is_active": true }',
+            notes:'Condition types: file_extension, file_size_gt, file_name_contains, bucket_name_contains, bucket_status, provider, file_count_gt, classification.',
+            errors:[{c:400,d:'Name and conditions required'},{c:401,d:'Authentication required'}]},
+          {tag:'Stats',m:'GET',p:'/stats',d:'Public platform statistics',auth:'none',
+            resSample:'{\n  "total_buckets": 12500,\n  "total_files": 458000,\n  "total_size_bytes": 1073741824,\n  "providers": [\n    { "name": "aws", "bucket_count": 5200, "file_count": 180000 }\n  ],\n  "top_extensions": [\n    { "extension": "json", "count": 45000 }\n  ]\n}'},
+          {tag:'Stats',m:'GET',p:'/dashboard/executive',d:'Executive dashboard with KPIs',auth:'optional',
+            resSample:'{\n  "total_buckets": 12500,\n  "open_buckets": 3200,\n  "exposure_rate": 25.6,\n  "total_files": 458000,\n  "risk_distribution": { "critical": 120, "high": 450 },\n  "sensitive_files": { "credentials": 230, "pii": 180 },\n  "recent_scans": { "total": 15, "completed": 12 },\n  "top_exposed_buckets": [...]\n}'},
+          {tag:'Compliance',m:'POST',p:'/compliance/check/:fid',d:'Run compliance check against framework',auth:'strict',
+            params:[{n:'framework_id',t:'integer',r:true,d:'Framework ID (path param)'}],
+            resSample:'{\n  "framework": "PCI-DSS",\n  "total_controls": 12,\n  "passed": 8,\n  "failed": 4,\n  "results": [\n    { "control_id": "PCI-3.4", "title": "Encrypt stored data", "status": "fail", "details": "12 unencrypted files found" }\n  ]\n}',
+            errors:[{c:404,d:'Framework not found'},{c:401,d:'Authentication required'}]},
+          {tag:'Remediations',m:'POST',p:'/remediations',d:'Create remediation task',auth:'strict',
+            params:[{n:'bucket_id',t:'integer',r:true,d:'Bucket to remediate'},{n:'title',t:'string',r:true,d:'Task title'},{n:'description',t:'string',r:false,d:'Task description'},{n:'priority',t:'string',r:false,d:'critical | high | medium | low'},{n:'due_date',t:'date',r:false,d:'Due date'},{n:'assigned_to',t:'integer',r:false,d:'Assignee user ID'}],
+            reqSample:'{\n  "bucket_id": 5,\n  "title": "Close exposed company-backups bucket",\n  "priority": "critical",\n  "due_date": "2026-03-29"\n}',
+            resSample:'{ "id": 8, "status": "open", "created_at": "2026-03-22T10:00:00Z" }',
+            errors:[{c:400,d:'bucket_id and title required'},{c:401,d:'Authentication required'}]},
+          {tag:'Orgs',m:'POST',p:'/orgs',d:'Create organization',auth:'strict',
+            params:[{n:'name',t:'string',r:true,d:'Organization name'},{n:'slug',t:'string',r:false,d:'URL-friendly slug'}],
+            reqSample:'{ "name": "Acme Corp", "slug": "acme" }',
+            resSample:'{ "id": 1, "name": "Acme Corp", "slug": "acme" }',
+            errors:[{c:400,d:'Name required'},{c:401,d:'Authentication required'}]},
+        ]
+        const allTags=[...new Set(endpoints.map((e:any)=>e.tag))]
+        const filtered=endpoints.filter((e:any)=>{
+          if(apiFilterTag && e.tag!==apiFilterTag) return false
+          if(apiSearchQ){const q=apiSearchQ.toLowerCase();return e.p.toLowerCase().includes(q)||e.d.toLowerCase().includes(q)||e.tag.toLowerCase().includes(q)} return true})
+        return <div style={{padding:'80px 24px 24px',maxWidth:960,margin:'0 auto'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:12}}>
+            <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>REST API Reference</h2>
+            <a href="/api/v1/docs" target="_blank" rel="noopener" style={{fontSize:12,color:'var(--accent)',textDecoration:'none',border:'1px solid var(--accent)',borderRadius:6,padding:'5px 12px'}}>Open Swagger UI →</a>
+          </div>
+          <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20}}>Click any endpoint to view request, response, and error details. Auth: Bearer token, API key header, or query param.</p>
+          <div className="card-static" style={{padding:12,marginBottom:20,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+            <div style={{flex:1,minWidth:180,display:'flex',alignItems:'center',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:6,overflow:'hidden'}}>
+              <span style={{padding:'0 10px',color:'var(--text-muted)',fontSize:13}}>⌕</span>
+              <input value={apiSearchQ} onChange={e=>setApiSearchQ(e.target.value)} placeholder="Filter endpoints..." style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:12,padding:'8px 8px 8px 0'}}/>
+            </div>
+            <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{['',  ...allTags].map(t=><button key={t||'all'} onClick={()=>setApiFilterTag(t)} style={{background:apiFilterTag===t?'var(--accent-bg)':'transparent',border:`1px solid ${apiFilterTag===t?'var(--accent)':'var(--border-subtle)'}`,color:apiFilterTag===t?'var(--accent)':'var(--text-tertiary)',borderRadius:5,padding:'3px 8px',fontSize:10,cursor:'pointer',fontWeight:apiFilterTag===t?600:400}}>{t||'All'}</button>)}</div>
+          </div>
+          <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:16}}>{filtered.length} endpoint{filtered.length!==1?'s':''}</div>
+          {filtered.map((ep:any)=>{const key=ep.m+ep.p;const isOpen=expandedApi===key;const mc=MC[ep.m]||MC.GET;return <div key={key} style={{marginBottom:6}}>
+            <div onClick={()=>setExpandedApi(isOpen?null:key)} style={{background:isOpen?'var(--bg-elevated)':'var(--bg-secondary)',border:`1px solid ${isOpen?'var(--border-strong)':ep.ai?'#a855f720':'var(--border-default)'}`,borderRadius:isOpen?'10px 10px 0 0':10,padding:'12px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',transition:'all 0.15s'}}>
+              <span style={{background:mc.bg,color:mc.c,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700,border:`1px solid ${mc.bc}`,fontFamily:'var(--font-mono)',minWidth:52,textAlign:'center' as const}}>{ep.m}</span>
+              <span style={{fontSize:13,fontWeight:600,fontFamily:'var(--font-mono)',color:'var(--text-primary)'}}>{ep.p}</span>
+              <span style={{fontSize:12,color:'var(--text-tertiary)',flex:1}}>{ep.d}</span>
+              {ep.ai&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:600}}>AI</span>}
+              <span style={{background:ep.auth==='strict'?'#f5a62315':ep.auth==='none'?'var(--accent-bg)':'#4a9eff15',color:ep.auth==='strict'?'var(--warning)':ep.auth==='none'?'var(--accent)':'var(--info)',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:600,border:`1px solid ${ep.auth==='strict'?'rgba(245,166,35,0.2)':ep.auth==='none'?'rgba(0,232,123,0.2)':'rgba(74,158,255,0.2)'}`}}>{ep.auth==='strict'?'AUTH':'PUBLIC'}</span>
+              <span style={{fontSize:10,color:'var(--text-muted)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▾</span>
+            </div>
+            {isOpen && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-strong)',borderTop:'none',borderRadius:'0 0 10px 10px',padding:20,animation:'fadeIn 0.2s ease-out'}}>
+              {ep.params&&ep.params.length>0&&<div style={{marginBottom:16}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--text-secondary)',textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Parameters</div>
+                <table style={{width:'100%',fontSize:12,borderCollapse:'collapse'}}>
+                  <thead><tr style={{borderBottom:'1px solid var(--border-default)'}}>
+                    <th style={{textAlign:'left',padding:'6px 8px',color:'var(--text-muted)',fontSize:10,fontWeight:600}}>Name</th>
+                    <th style={{textAlign:'left',padding:'6px 8px',color:'var(--text-muted)',fontSize:10,fontWeight:600}}>Type</th>
+                    <th style={{textAlign:'left',padding:'6px 8px',color:'var(--text-muted)',fontSize:10,fontWeight:600}}>Req</th>
+                    <th style={{textAlign:'left',padding:'6px 8px',color:'var(--text-muted)',fontSize:10,fontWeight:600}}>Description</th>
+                  </tr></thead>
+                  <tbody>{ep.params.map((p:any)=><tr key={p.n} style={{borderBottom:'1px solid var(--border-subtle)'}}>
+                    <td style={{padding:'6px 8px',fontFamily:'var(--font-mono)',color:'var(--accent-dim)',fontWeight:600}}>{p.n}</td>
+                    <td style={{padding:'6px 8px',color:'var(--text-tertiary)'}}>{p.t}</td>
+                    <td style={{padding:'6px 8px'}}>{p.r?<span style={{color:'var(--danger)',fontSize:10,fontWeight:700}}>required</span>:<span style={{color:'var(--text-muted)',fontSize:10}}>optional</span>}</td>
+                    <td style={{padding:'6px 8px',color:'var(--text-secondary)'}}>{p.d}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>}
+              {ep.reqSample&&<div style={{marginBottom:16}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--text-secondary)',textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Request Body</div>
+                <pre style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:14,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--accent-dim)',overflow:'auto',whiteSpace:'pre-wrap' as const,lineHeight:1.5}}>{ep.reqSample}</pre>
+              </div>}
+              <div style={{marginBottom:ep.errors||ep.notes?16:0}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--text-secondary)',textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Response <span style={{color:'var(--accent)',fontWeight:400}}>200</span></div>
+                <pre style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:14,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text-primary)',overflow:'auto',whiteSpace:'pre-wrap' as const,lineHeight:1.5}}>{ep.resSample}</pre>
+              </div>
+              {ep.notes&&<div style={{marginBottom:ep.errors?16:0,background:'#4a9eff08',border:'1px solid rgba(74,158,255,0.15)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'var(--info)',lineHeight:1.5}}>
+                <span style={{fontWeight:700}}>Note: </span>{ep.notes}
+              </div>}
+              {ep.errors&&ep.errors.length>0&&<div>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--text-secondary)',textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:8}}>Error Responses</div>
+                {ep.errors.map((err:any,i:number)=><div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 0',borderBottom:i<ep.errors.length-1?'1px solid var(--border-subtle)':'none'}}>
+                  <span style={{background:'#f0484815',color:'#f04848',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,fontFamily:'var(--font-mono)',border:'1px solid rgba(240,72,72,0.2)',minWidth:36,textAlign:'center' as const}}>{err.c}</span>
+                  <span style={{fontSize:12,color:'var(--text-secondary)'}}>{err.d}</span>
+                </div>)}
+              </div>}
+            </div>}
+          </div>})}
+        </div>})()}
 
       {/* ─── TOAST NOTIFICATIONS ─── */}
       {toasts.length>0 && <div style={{position:'fixed',bottom:20,right:20,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>
