@@ -62,6 +62,19 @@ def create_app() -> Flask:
     else:
         logging.getLogger(__name__).info("Monitor scheduler disabled in API process (ENABLE_MONITOR_SCHEDULER=false)")
 
+    # Start scan scheduler to auto-execute due scan schedules.
+    if settings.ENABLE_SCAN_SCHEDULER:
+        from backend.app.api.routes import scan_service
+        from backend.app.services.scan_scheduler import ScanScheduler
+        scan_scheduler = ScanScheduler(scan_service)
+        scan_scheduler.start(check_interval_seconds=settings.SCAN_SCHEDULER_INTERVAL_SECONDS)
+        logging.getLogger(__name__).info(
+            "Scan scheduler enabled (interval=%ss)",
+            settings.SCAN_SCHEDULER_INTERVAL_SECONDS,
+        )
+    else:
+        logging.getLogger(__name__).info("Scan scheduler disabled (ENABLE_SCAN_SCHEDULER=false)")
+
     # Health check at root
     @app.route("/")
     def root():

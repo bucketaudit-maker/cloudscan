@@ -59,6 +59,8 @@ class Settings:
     RUN_DB_MIGRATIONS_ON_STARTUP: bool = field(default_factory=lambda: _env_bool("RUN_DB_MIGRATIONS_ON_STARTUP", True))
     ENABLE_MONITOR_SCHEDULER: bool = field(default_factory=lambda: _env_bool("ENABLE_MONITOR_SCHEDULER", False))
     MONITOR_SCHEDULER_INTERVAL_SECONDS: int = field(default_factory=lambda: _env_int("MONITOR_SCHEDULER_INTERVAL_SECONDS", 300))
+    ENABLE_SCAN_SCHEDULER: bool = field(default_factory=lambda: _env_bool("ENABLE_SCAN_SCHEDULER", True))
+    SCAN_SCHEDULER_INTERVAL_SECONDS: int = field(default_factory=lambda: _env_int("SCAN_SCHEDULER_INTERVAL_SECONDS", 60))
 
     # API
     API_HOST: str = field(default_factory=lambda: _env("API_HOST", "0.0.0.0"))

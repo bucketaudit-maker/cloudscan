@@ -117,7 +117,7 @@ export default function App() {
   const [bulkAlerts, setBulkAlerts] = useState<number[]>([])
   const [bulkRems, setBulkRems] = useState<number[]>([])
   const [tagForm, setTagForm] = useState({name:'',color:'#6b7280'})
-  const [schedForm, setSchedForm] = useState({name:'',keywords:'',companies:'',frequency:'daily'})
+  const [schedForm, setSchedForm] = useState({name:'',keywords:'',companies:'',frequency:'daily',providers:[] as string[]})
   const [showTagPicker, setShowTagPicker] = useState<number|null>(null)
   const [bucketSearch, setBucketSearch] = useState('')
   const [bucketStatusFilter, setBucketStatusFilter] = useState('')
@@ -610,27 +610,57 @@ export default function App() {
 
         {/* Scan Schedules */}
         <div style={{marginTop:32}}>
-          <h3 style={{fontSize:15,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:12}}>Scan Schedules</h3>
-          <div style={{padding:24,marginBottom:16}} className="card-static">
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>SCHEDULE NAME</label><input value={schedForm.name} onChange={e=>setSchedForm({...schedForm,name:e.target.value})} placeholder="Daily backup scan" style={IS}/></div>
-              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>FREQUENCY</label><select value={schedForm.frequency} onChange={e=>setSchedForm({...schedForm,frequency:e.target.value})} style={{...IS,appearance:'auto' as any}}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
-            </div>
-            <div style={{marginBottom:12}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>KEYWORDS (comma-separated)</label><textarea value={schedForm.keywords} onChange={e=>setSchedForm({...schedForm,keywords:e.target.value})} placeholder="backup, database, config" style={{...IS,minHeight:50,resize:'vertical' as const}}/></div>
-            <button onClick={async()=>{if(!schedForm.name||!schedForm.keywords.trim())return;await apiFetch('/scans/schedules',{method:'POST',body:JSON.stringify({name:schedForm.name,keywords:schedForm.keywords.split(',').map(s=>s.trim()).filter(Boolean),companies:schedForm.companies?schedForm.companies.split(',').map(s=>s.trim()).filter(Boolean):[],frequency:schedForm.frequency})});setSchedForm({name:'',keywords:'',companies:'',frequency:'daily'});loadScanSchedules()}} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>+ Create Schedule</button>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+            <span style={{fontSize:20}}>&#128337;</span>
+            <h3 style={{fontSize:17,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>Scheduled Scans</h3>
+            <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:'auto'}}>Auto-runs on schedule across the open internet</span>
           </div>
-          {scanSchedules.length>0 && scanSchedules.map((s:any)=>{const fc:any={hourly:'#4a9eff',daily:'var(--accent)',weekly:'#f5a623',monthly:'#a855f7'};return <div key={s.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:'14px 20px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><span style={{fontSize:14,fontWeight:600}}>{s.name}</span><span style={{background:(fc[s.frequency]||'var(--text-muted)')+'18',color:fc[s.frequency]||'var(--text-muted)',border:`1px solid ${(fc[s.frequency]||'var(--text-muted)')}40`,padding:'1px 8px',borderRadius:4,fontSize:9,fontWeight:700,textTransform:'uppercase' as const}}>{s.frequency}</span><span style={{width:8,height:8,borderRadius:'50%',background:s.is_active?'var(--accent)':'var(--text-muted)'}}/></div>
-              <div style={{fontSize:11,color:'var(--text-muted)'}}>{s.keywords?((typeof s.keywords==='string'?JSON.parse(s.keywords):s.keywords)||[]).join(', '):''} | Last: {s.last_run_at?ago(s.last_run_at):'Never'} | Next: {s.next_run_at?new Date(s.next_run_at).toLocaleString():'—'}</div>
+          <div style={{padding:28,marginBottom:20,borderLeft:'3px solid var(--accent)'}} className="card-static">
+            <div style={{fontSize:13,fontWeight:600,marginBottom:16,color:'var(--text-primary)'}}>Create New Schedule</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4,letterSpacing:'0.5px'}}>SCHEDULE NAME</label><input value={schedForm.name} onChange={e=>setSchedForm({...schedForm,name:e.target.value})} placeholder="e.g. Daily backup scan" style={IS}/></div>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4,letterSpacing:'0.5px'}}>FREQUENCY</label><select value={schedForm.frequency} onChange={e=>setSchedForm({...schedForm,frequency:e.target.value})} style={{...IS,appearance:'auto' as any}}><option value="hourly">Every Hour</option><option value="daily">Every Day</option><option value="weekly">Every Week</option><option value="monthly">Every Month</option></select></div>
             </div>
-            <div style={{display:'flex',gap:6}}>
-              <button onClick={()=>apiFetch(`/scans/schedules/${s.id}/toggle`,{method:'POST'}).then(()=>loadScanSchedules())} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:s.is_active?'var(--warning)':'var(--accent)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10}}>{s.is_active?'Pause':'Enable'}</button>
-              <button onClick={()=>apiFetch(`/scans/schedules/${s.id}/run`,{method:'POST'}).then(()=>{loadScanSchedules();loadScanHistory()})} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10}}>Run Now</button>
-              <button onClick={()=>apiFetch(`/scans/schedules/${s.id}`,{method:'DELETE'}).then(()=>loadScanSchedules())} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:10}}>Delete</button>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4,letterSpacing:'0.5px'}}>KEYWORDS (comma-separated)</label><textarea value={schedForm.keywords} onChange={e=>setSchedForm({...schedForm,keywords:e.target.value})} placeholder="backup, database, config, staging" style={{...IS,minHeight:56,resize:'vertical' as const}}/></div>
+              <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4,letterSpacing:'0.5px'}}>COMPANIES (optional)</label><textarea value={schedForm.companies} onChange={e=>setSchedForm({...schedForm,companies:e.target.value})} placeholder="acme-corp, globex" style={{...IS,minHeight:56,resize:'vertical' as const}}/></div>
             </div>
-          </div>})}
-          {scanSchedules.length===0 && <div style={{textAlign:'center',padding:24,color:'var(--text-muted)',fontSize:12}}>No scan schedules configured. Create one above.</div>}
+            <div style={{marginBottom:16}}>
+              <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:6,letterSpacing:'0.5px'}}>CLOUD PROVIDERS</label>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{Object.entries(PL).map(([k,l])=>{const active=schedForm.providers.includes(k);return <button key={k} onClick={()=>setSchedForm({...schedForm,providers:active?schedForm.providers.filter(p=>p!==k):[...schedForm.providers,k]})} style={{background:active?PC[k].bg+'20':'var(--bg-primary)',border:`1px solid ${active?PC[k].bg:'var(--border-subtle)'}`,borderRadius:8,padding:'5px 12px',cursor:'pointer',color:active?PC[k].bg:'var(--text-muted)',fontSize:11,fontWeight:active?600:400,transition:'all 0.15s ease'}}>{l as string}</button>})}
+                <span style={{fontSize:10,color:'var(--text-tertiary)',alignSelf:'center',marginLeft:4}}>{schedForm.providers.length===0?'All providers':''+schedForm.providers.length+' selected'}</span>
+              </div>
+            </div>
+            <button onClick={async()=>{if(!schedForm.name||!schedForm.keywords.trim())return;await apiFetch('/scans/schedules',{method:'POST',body:JSON.stringify({name:schedForm.name,keywords:schedForm.keywords.split(',').map(s=>s.trim()).filter(Boolean),companies:schedForm.companies?schedForm.companies.split(',').map(s=>s.trim()).filter(Boolean):[],providers:schedForm.providers.length>0?schedForm.providers:[],frequency:schedForm.frequency})});setSchedForm({name:'',keywords:'',companies:'',frequency:'daily',providers:[]});loadScanSchedules()}} className="btn-primary" style={{padding:'10px 28px',fontSize:12,letterSpacing:'0.3px'}}>+ Create Schedule</button>
+          </div>
+
+          {scanSchedules.length>0 && <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {scanSchedules.map((s:any)=>{const fc:any={hourly:'#4a9eff',daily:'var(--accent)',weekly:'#f5a623',monthly:'#a855f7'};const kws=(()=>{try{return typeof s.keywords==='string'?JSON.parse(s.keywords):s.keywords||[]}catch{return []}})();const provs=(()=>{try{return typeof s.providers==='string'?JSON.parse(s.providers):s.providers||[]}catch{return []}})();return <div key={s.id} className="card" style={{padding:'16px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:16}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,flexWrap:'wrap'}}>
+                  <span style={{width:8,height:8,borderRadius:'50%',background:s.is_active?'var(--accent)':'var(--text-muted)',flexShrink:0}}/>
+                  <span style={{fontSize:14,fontWeight:600}}>{s.name}</span>
+                  <span style={{background:(fc[s.frequency]||'var(--text-muted)')+'18',color:fc[s.frequency]||'var(--text-muted)',border:`1px solid ${(fc[s.frequency]||'var(--text-muted)')}40`,padding:'2px 8px',borderRadius:4,fontSize:9,fontWeight:700,textTransform:'uppercase' as const}}>{s.frequency}</span>
+                  {provs.length>0 && provs.map((p:string)=><span key={p} style={{background:(PC[p]?.bg||'#666')+'18',color:PC[p]?.bg||'#666',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:600}}>{p.toUpperCase()}</span>)}
+                </div>
+                <div style={{display:'flex',gap:12,fontSize:11,color:'var(--text-muted)',flexWrap:'wrap'}}>
+                  <span title="Keywords">&#128269; {kws.join(', ')||'—'}</span>
+                  <span title="Last run">&#9203; Last: {s.last_run_at?ago(s.last_run_at):'Never'}</span>
+                  <span title="Next run">&#9654; Next: {s.next_run_at?new Date(s.next_run_at).toLocaleString():'—'}</span>
+                  {s.last_job_id && <span style={{color:'var(--text-tertiary)'}}>Job #{s.last_job_id}</span>}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:6,flexShrink:0}}>
+                <button onClick={()=>apiFetch(`/scans/schedules/${s.id}/toggle`,{method:'POST'}).then(()=>loadScanSchedules())} style={{background:s.is_active?'var(--warning)'+'12':'var(--accent-bg)',border:`1px solid ${s.is_active?'var(--warning)'+'40':'rgba(0,232,123,0.2)'}`,color:s.is_active?'var(--warning)':'var(--accent)',padding:'5px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>{s.is_active?'Pause':'Enable'}</button>
+                <button onClick={()=>apiFetch(`/scans/schedules/${s.id}/run`,{method:'POST'}).then(()=>{loadScanSchedules();loadScanHistory()})} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'5px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Run Now</button>
+                <button onClick={()=>{if(confirm('Delete this schedule?'))apiFetch(`/scans/schedules/${s.id}`,{method:'DELETE'}).then(()=>loadScanSchedules())}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'5px 12px',borderRadius:6,cursor:'pointer',fontSize:10}}>Delete</button>
+              </div>
+            </div>})}
+          </div>}
+          {scanSchedules.length===0 && <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:12}} className="card-static">
+            <div style={{fontSize:32,marginBottom:8,opacity:0.4}}>&#128337;</div>
+            No scan schedules configured yet. Create one above to automatically scan the open internet for your keywords on a recurring basis.
+          </div>}
         </div>
         </div>}
 
