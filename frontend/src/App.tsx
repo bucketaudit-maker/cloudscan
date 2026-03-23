@@ -312,7 +312,7 @@ export default function App() {
                 </button>)}
               </div>}
             </div>}
-          return <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden',alignItems:'center'}}>
+          return <div style={{display:'flex',gap:2,flexWrap:'nowrap',alignItems:'center'}}>
             {navBtn('search','Files','⌕')}
             {navBtn('buckets','Buckets','◫')}
             {navBtn('scan','Scanner','⟳')}
