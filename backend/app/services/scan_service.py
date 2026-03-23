@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from typing import Callable
 
-from backend.app.models.database import BucketStore, FileStore, ScanJobStore
+from backend.app.models.database import BucketStore, FileStore, ScanJobStore, ScanSnapshotStore, ScanDiffStore
 from backend.app.scanners.engine import (
     BucketScanner, BucketResult, Provider, PROVIDER_DB_IDS,
     ScanProgress,
@@ -151,6 +151,21 @@ class ScanService:
                             bucket["id"], risk["risk_score"], risk["risk_level"])
                     except Exception as e:
                         logger.warning(f"AI processing failed for {result.name}: {e}")
+                # Capture snapshot for drift detection
+                try:
+                    total_size = sum(f.get("size", 0) for f in (result.files or []))
+                    file_hashes = [f.get("etag") or f.get("name", "") for f in (result.files or [])]
+                    ScanSnapshotStore.capture(
+                        scan_job_id=job_id,
+                        bucket_id=bucket["id"],
+                        status=result.status,
+                        file_count=result.file_count or 0,
+                        total_size_bytes=total_size,
+                        file_hashes=file_hashes,
+                    )
+                except Exception as e:
+                    logger.warning(f"Snapshot capture failed for {result.name}: {e}")
+
                 self._emit("bucket_found", {
                     "job_id": job_id,
                     "bucket": {
@@ -188,6 +203,15 @@ class ScanService:
                 self._emit("scan_complete", {
                     "job_id": job_id, "stats": scanner.progress.to_dict()})
                 logger.info(f"[Scan {job_id}] COMPLETE: {scanner.progress.buckets_open} open, {scanner.progress.files_indexed} files")
+
+                # Compute drift diffs against previous snapshots
+                try:
+                    diffs = ScanDiffStore.compute_diffs(job_id)
+                    if diffs:
+                        logger.info(f"[Scan {job_id}] Drift detection: {len(diffs)} changes found")
+                        self._emit("drift_detected", {"job_id": job_id, "diff_count": len(diffs)})
+                except Exception as e:
+                    logger.warning(f"[Scan {job_id}] Drift computation failed: {e}")
 
         except ScanCancelled:
             logger.info(f"[Scan {job_id}] Scan aborted by cancellation")

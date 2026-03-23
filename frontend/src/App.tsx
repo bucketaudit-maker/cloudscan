@@ -119,6 +119,19 @@ export default function App() {
   const [tagForm, setTagForm] = useState({name:'',color:'#6b7280'})
   const [schedForm, setSchedForm] = useState({name:'',keywords:'',companies:'',frequency:'daily'})
   const [showTagPicker, setShowTagPicker] = useState<number|null>(null)
+  // Sprint 6 state: 2FA, Drift, Alert Rules, Dashboard
+  const [twoFaStatus, setTwoFaStatus] = useState<any>(null)
+  const [twoFaSetup, setTwoFaSetup] = useState<any>(null)
+  const [twoFaCode, setTwoFaCode] = useState('')
+  const [twoFaTempToken, setTwoFaTempToken] = useState('')
+  const [driftDiffs, setDriftDiffs] = useState<any>({items:[], total:0})
+  const [driftSummary, setDriftSummary] = useState<any>(null)
+  const [driftFilter, setDriftFilter] = useState({severity:'',unreviewed:false})
+  const [alertRules, setAlertRules] = useState<any[]>([])
+  const [ruleForm, setRuleForm] = useState({name:'',description:'',severity:'medium',conditions:[] as any[],condType:'file_extension',condValue:''})
+  const [execDash, setExecDash] = useState<any>(null)
+  const [riskTrends, setRiskTrends] = useState<any>(null)
+  const [remSla, setRemSla] = useState<any>(null)
   // Quick wins: toast, modal, loading, shortcuts
   const [toasts, setToasts] = useState<{id:number,msg:string,type:string}[]>([])
   const toast = useCallback((msg:string,type='info')=>{const id=Date.now();setToasts(p=>[...p,{id,msg,type}]);setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),3500)},[])
@@ -146,7 +159,8 @@ export default function App() {
   },[])
   useEffect(() => { const c = connectSSE(); return c }, [connectSSE])
 
-  const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
+  const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r){setAuthError('Login failed');return}; if(r.requires_2fa){setTwoFaTempToken(r.temp_token);setAuthMode('login' as any);setAuthSuccess('Enter your 2FA code');setTwoFaCode('');return}; if(!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
+  const doVerify2fa = async() => { setAuthError(''); setAuthLoading(true); const r = await apiFetch('/auth/2fa/verify',{method:'POST',body:JSON.stringify({temp_token:twoFaTempToken,code:twoFaCode})}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Invalid code');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setTwoFaTempToken(''); setTwoFaCode(''); setAuthForm({email:'',username:'',password:''}) }
   const doRegister = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/register',{method:'POST',body:JSON.stringify(authForm)}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Registration failed');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setShowWelcome(true); setView('home'); setAuthForm({email:'',username:'',password:''}) }
   const doLogout = () => { _token=null; try{localStorage.removeItem('cs_token')}catch{}; setUser(null); setView('home'); setAuthMode('login'); setAuthError(''); setAuthSuccess('') }
   const doForgotPassword = async() => {
@@ -231,6 +245,12 @@ export default function App() {
   const loadBookmarkIds = async()=>{const d=await apiFetch('/bookmarks/ids');if(Array.isArray(d))setBookmarkIds(d)}
   const loadScanSchedules = async()=>{const d=await apiFetch('/scans/schedules');if(Array.isArray(d))setScanSchedules(d)}
   const loadAuditLog = async(p=1)=>{const d=await apiFetch(`/audit-log?page=${p}&per_page=50`);if(d?.items)setAuditLog(d)}
+  // Sprint 6 loaders
+  const load2faStatus = async()=>{const d=await apiFetch('/auth/2fa/status');if(d)setTwoFaStatus(d)}
+  const loadDriftDiffs = async(p=1)=>{const qs=new URLSearchParams({page:String(p),per_page:'50',...(driftFilter.severity?{severity:driftFilter.severity}:{}),...(driftFilter.unreviewed?{unreviewed:'true'}:{})}).toString();const d=await apiFetch(`/drift/diffs?${qs}`);if(d?.items)setDriftDiffs(d)}
+  const loadDriftSummary = async()=>{const d=await apiFetch('/drift/diffs/summary');if(d)setDriftSummary(d)}
+  const loadAlertRules = async()=>{const d=await apiFetch('/alert-rules');if(d?.items)setAlertRules(d.items)}
+  const loadExecDash = async()=>{const [ed,rt,sla]=await Promise.all([apiFetch('/dashboard/executive'),apiFetch('/dashboard/risk-trends?days=30'),apiFetch('/dashboard/remediation-sla')]);if(ed)setExecDash(ed);if(rt)setRiskTrends(rt);if(sla)setRemSla(sla)}
 
   // ═══════════════════════════════════════════════════════════════
   // ALL VIEWS INLINED — no component functions inside App()
@@ -264,8 +284,8 @@ export default function App() {
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden'}}>
-          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['ai-insights','AI','✦'],['activity','Activity','⏲'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
-            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else setView(id as string)}}
+          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['drift','Drift','△'],['rules','Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['dashboard','Dashboard','◈'],['ai-insights','AI','✦'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
+            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else setView(id as string)}}
               style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'var(--font-mono)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
               <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
@@ -341,8 +361,15 @@ export default function App() {
               <input type="password" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})} placeholder="Minimum 8 characters" onKeyDown={e=>e.key==='Enter'&&doResetPassword()} style={IS}/></div>
           </>}
 
+          {/* 2FA verification */}
+          {twoFaTempToken && authMode==='login' && <div style={{marginBottom:16}}>
+            <label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:6}}>2FA CODE</label>
+            <input value={twoFaCode} onChange={e=>setTwoFaCode(e.target.value)} placeholder="Enter 6-digit code or backup code" maxLength={8} onKeyDown={e=>e.key==='Enter'&&doVerify2fa()} style={IS}/>
+            <button onClick={doVerify2fa} disabled={authLoading||!twoFaCode} style={{width:'100%',marginTop:12,background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',opacity:authLoading?0.6:1}}>{authLoading?'Verifying...':'Verify 2FA'}</button>
+          </div>}
+
           {/* Action buttons */}
-          {authMode==='login' && <button onClick={doLogin} disabled={authLoading} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',opacity:authLoading?0.6:1}}>{authLoading?'Signing in...':'Sign In'}</button>}
+          {authMode==='login' && !twoFaTempToken && <button onClick={doLogin} disabled={authLoading} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',opacity:authLoading?0.6:1}}>{authLoading?'Signing in...':'Sign In'}</button>}
           {authMode==='register' && <button onClick={doRegister} disabled={authLoading} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',opacity:authLoading?0.6:1}}>{authLoading?'Creating...':'Create Account'}</button>}
           {authMode==='forgot' && <button onClick={doForgotPassword} disabled={authLoading} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',opacity:authLoading?0.6:1}}>{authLoading?'Sending...':'Send Reset Link'}</button>}
           {authMode==='reset' && <button onClick={doResetPassword} disabled={authLoading} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',opacity:authLoading?0.6:1}}>{authLoading?'Resetting...':'Reset Password'}</button>}
@@ -832,6 +859,36 @@ export default function App() {
           <button onClick={updateSettings} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>Save Changes</button>
         </div>
 
+        {/* Two-Factor Authentication */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+          <h3 style={{fontSize:14,marginBottom:4,color:'var(--text-secondary)'}}>Two-Factor Authentication</h3>
+          <p style={{fontSize:11,color:'var(--text-muted)',margin:'0 0 16px'}}>Add an extra layer of security to your account with TOTP-based 2FA.</p>
+          {!twoFaStatus ? <button onClick={load2faStatus} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'8px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Check 2FA Status</button>
+          : twoFaStatus.enabled ? <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <span style={{background:'rgba(0,232,123,0.15)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:700}}>ENABLED</span>
+              <span style={{fontSize:11,color:'var(--text-muted)'}}>{twoFaStatus.backup_codes_remaining} backup codes remaining</span>
+            </div>
+            <button onClick={async()=>{const pw=prompt('Enter your password to disable 2FA:');if(!pw)return;const r=await apiFetch('/auth/2fa/disable',{method:'POST',body:JSON.stringify({password:pw})});if(r?.message){toast('2FA disabled','success');load2faStatus()}else{toast(r?.error||'Failed','error')}}} style={{background:'rgba(240,72,72,0.1)',border:'1px solid rgba(240,72,72,0.2)',color:'#f04848',padding:'8px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Disable 2FA</button>
+          </div>
+          : <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <span style={{background:'rgba(240,72,72,0.15)',color:'#f04848',padding:'4px 12px',borderRadius:6,fontSize:12,fontWeight:700}}>NOT ENABLED</span>
+            </div>
+            {!twoFaSetup ? <button onClick={async()=>{const r=await apiFetch('/auth/2fa/setup',{method:'POST'});if(r?.secret)setTwoFaSetup(r);else toast(r?.error||'Setup failed','error')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'8px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700}}>Enable 2FA</button>
+            : <div style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:16}}>
+              <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:8}}>Add this secret to your authenticator app:</div>
+              <div style={{background:'var(--bg-secondary)',padding:'8px 12px',borderRadius:6,fontFamily:'var(--font-mono)',fontSize:13,fontWeight:600,color:'var(--accent)',marginBottom:12,wordBreak:'break-all' as const}}>{twoFaSetup.secret}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>Or use the URI: <code style={{fontSize:10}}>{twoFaSetup.otpauth_uri}</code></div>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input value={twoFaCode} onChange={e=>setTwoFaCode(e.target.value)} placeholder="Enter 6-digit code" maxLength={6} style={{...IS,width:160,padding:'8px 12px'}}
+                  onKeyDown={e=>{if(e.key==='Enter'&&twoFaCode.length===6){(async()=>{const r=await apiFetch('/auth/2fa/confirm',{method:'POST',body:JSON.stringify({code:twoFaCode})});if(r?.backup_codes){toast('2FA enabled!','success');setTwoFaSetup(null);setTwoFaCode('');load2faStatus();setModal({title:'Backup Codes',msg:'Save these codes securely. Each can be used once:\n\n'+r.backup_codes.join('  '),onConfirm:()=>{}})}else{toast(r?.error||'Invalid code','error')}})()}}}/>
+                <button onClick={async()=>{const r=await apiFetch('/auth/2fa/confirm',{method:'POST',body:JSON.stringify({code:twoFaCode})});if(r?.backup_codes){toast('2FA enabled!','success');setTwoFaSetup(null);setTwoFaCode('');load2faStatus();setModal({title:'Backup Codes',msg:'Save these codes securely. Each can be used once:\n\n'+r.backup_codes.join('  '),onConfirm:()=>{}})}else{toast(r?.error||'Invalid code','error')}}} disabled={twoFaCode.length!==6} style={{background:twoFaCode.length===6?'var(--accent)':'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:twoFaCode.length===6?'#000':'var(--text-muted)',padding:'8px 16px',borderRadius:8,cursor:twoFaCode.length===6?'pointer':'not-allowed',fontSize:12,fontWeight:600}}>Verify & Enable</button>
+              </div>
+            </div>}
+          </div>}
+        </div>
+
         {/* Organizations */}
         <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Organizations</h3>
@@ -930,6 +987,241 @@ export default function App() {
             <button disabled={activityPage<=1} onClick={()=>loadActivity(activityPage-1)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'6px 14px',cursor:activityPage<=1?'not-allowed':'pointer',color:'var(--text-secondary)',fontSize:12,opacity:activityPage<=1?0.5:1}}>Prev</button>
             <span style={{padding:'6px 14px',fontSize:12,color:'var(--text-muted)'}}>Page {activityPage} of {Math.ceil(activity.total/50)}</span>
             <button disabled={activityPage>=Math.ceil(activity.total/50)} onClick={()=>loadActivity(activityPage+1)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'6px 14px',cursor:activityPage>=Math.ceil(activity.total/50)?'not-allowed':'pointer',color:'var(--text-secondary)',fontSize:12,opacity:activityPage>=Math.ceil(activity.total/50)?0.5:1}}>Next</button>
+          </div>}
+        </>}
+      </div>}
+
+      {/* ─── DRIFT DETECTION ─── */}
+      {view==='drift' && <div style={{padding:'80px 24px 24px',maxWidth:1100,margin:'0 auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+          <div><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>Scan Drift Detection</h2>
+            <p style={{fontSize:13,color:'var(--text-tertiary)',margin:'4px 0 0'}}>Track changes between scans — new buckets, status changes, file additions.</p></div>
+        </div>
+        {/* Summary cards */}
+        {driftSummary && <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:24}}>
+          {[['Total Changes',driftSummary.total,'var(--text-primary)'],['Unreviewed',driftSummary.unreviewed,'var(--warning)'],['Critical',driftSummary.by_severity?.critical||0,'#f04848'],['High',driftSummary.by_severity?.high||0,'#ff6b35']].map(([l,v,c]:any)=>
+            <div key={l} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:16,textAlign:'center'}}>
+              <div style={{fontSize:24,fontWeight:800,color:c,fontFamily:'var(--font-display)'}}>{v}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{l}</div></div>)}
+        </div>}
+        {driftSummary?.by_type && <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap' as const}}>
+          {Object.entries(driftSummary.by_type).map(([t,c]:any)=>
+            <span key={t} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',padding:'4px 10px',borderRadius:6,fontSize:11,color:'var(--text-secondary)'}}>{t.replace(/_/g,' ')}: <b>{c}</b></span>)}
+        </div>}
+        {/* Filters */}
+        <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center'}}>
+          <select value={driftFilter.severity} onChange={e=>{setDriftFilter({...driftFilter,severity:e.target.value});setTimeout(()=>loadDriftDiffs(),0)}} style={{...IS,width:140,padding:'6px 10px'}}>
+            <option value="">All severities</option>
+            {['critical','high','medium','low','info'].map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-secondary)',cursor:'pointer'}}>
+            <input type="checkbox" checked={driftFilter.unreviewed} onChange={e=>{setDriftFilter({...driftFilter,unreviewed:e.target.checked});setTimeout(()=>loadDriftDiffs(),0)}}/>
+            Unreviewed only
+          </label>
+          <button onClick={()=>loadDriftDiffs()} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'6px 14px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600}}>Refresh</button>
+        </div>
+        {/* Diff list */}
+        {driftDiffs.items?.length===0 ? <div style={{textAlign:'center',padding:60,color:'var(--text-muted)'}}>
+          <div style={{fontSize:48,marginBottom:16}}>△</div>
+          <div style={{fontSize:16,fontWeight:600,marginBottom:8}}>No drift detected yet</div>
+          <div style={{fontSize:13}}>Run scans to start tracking changes across your monitored buckets.</div>
+        </div>
+        : <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {driftDiffs.items?.map((d:any)=><div key={d.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:16,display:'flex',alignItems:'center',gap:12}}>
+            <div style={{width:40,height:40,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,
+              background:d.diff_type==='new_bucket'?'rgba(0,232,123,0.1)':d.diff_type==='status_change'?'rgba(240,72,72,0.1)':d.diff_type==='files_added'?'rgba(74,158,255,0.1)':'rgba(245,166,35,0.1)',
+              color:d.diff_type==='new_bucket'?'var(--accent)':d.diff_type==='status_change'?'#f04848':d.diff_type==='files_added'?'#4a9eff':'#f5a623',
+            }}>{d.diff_type==='new_bucket'?'+':d.diff_type==='status_change'?'⇄':d.diff_type==='files_added'?'↑':d.diff_type==='files_removed'?'↓':'◇'}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                <span style={{fontWeight:600,fontSize:13}}>{d.bucket_name||'—'}</span>
+                {d.provider_name && <Badge provider={d.provider_name}/>}
+                <SevBadge s={d.severity}/>
+                <span style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:4,fontSize:9,color:'var(--text-muted)'}}>{d.diff_type.replace(/_/g,' ')}</span>
+                {d.is_reviewed && <span style={{fontSize:9,color:'var(--text-muted)'}}>reviewed</span>}
+              </div>
+              <div style={{fontSize:12,color:'var(--text-secondary)'}}>{d.summary}</div>
+              <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>{d.created_at?new Date(d.created_at).toLocaleString():'—'}</div>
+            </div>
+            {!d.is_reviewed && <button onClick={async()=>{await apiFetch(`/drift/diffs/${d.id}/review`,{method:'POST'});loadDriftDiffs();loadDriftSummary()}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'6px 12px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600,flexShrink:0}}>Review</button>}
+          </div>)}
+        </div>}
+        {driftDiffs.total>driftDiffs.items?.length && <div style={{textAlign:'center',marginTop:16}}>
+          <button onClick={()=>loadDriftDiffs(Math.floor(driftDiffs.items.length/50)+1)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'8px 20px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Load More</button>
+        </div>}
+      </div>}
+
+      {/* ─── CUSTOM ALERT RULES ─── */}
+      {view==='rules' && <div style={{padding:'80px 24px 24px',maxWidth:900,margin:'0 auto'}}>
+        <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>Custom Alert Rules</h2>
+        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:24}}>Define your own rules to get alerted when buckets or files match your criteria.</p>
+
+        {/* Create Rule Form */}
+        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+          <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Create Rule</h3>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>RULE NAME</label>
+              <input value={ruleForm.name} onChange={e=>setRuleForm({...ruleForm,name:e.target.value})} placeholder="e.g. Large SQL files" style={{...IS,padding:'8px 12px'}}/></div>
+            <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>SEVERITY</label>
+              <select value={ruleForm.severity} onChange={e=>setRuleForm({...ruleForm,severity:e.target.value})} style={{...IS,padding:'8px 12px'}}>
+                {['critical','high','medium','low','info'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+          </div>
+          <div style={{marginBottom:12}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>DESCRIPTION</label>
+            <input value={ruleForm.description} onChange={e=>setRuleForm({...ruleForm,description:e.target.value})} placeholder="Optional description" style={{...IS,padding:'8px 12px'}}/></div>
+
+          {/* Conditions */}
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>CONDITIONS ({ruleForm.conditions.length})</label>
+            {ruleForm.conditions.map((c:any,i:number)=><div key={i} style={{display:'flex',gap:8,alignItems:'center',marginBottom:4,padding:'4px 8px',background:'var(--bg-primary)',borderRadius:6,border:'1px solid var(--border-subtle)'}}>
+              <span style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>{c.type}</span>
+              <span style={{fontSize:11,color:'var(--text-secondary)'}}>= {c.value}</span>
+              <button onClick={()=>setRuleForm({...ruleForm,conditions:ruleForm.conditions.filter((_:any,j:number)=>j!==i)})} style={{marginLeft:'auto',background:'none',border:'none',color:'var(--danger)',cursor:'pointer',fontSize:14}}>×</button>
+            </div>)}
+            <div style={{display:'flex',gap:8,marginTop:8}}>
+              <select value={ruleForm.condType} onChange={e=>setRuleForm({...ruleForm,condType:e.target.value})} style={{...IS,width:180,padding:'6px 10px',fontSize:11}}>
+                <option value="file_extension">File extension</option>
+                <option value="file_size_gt">File size greater than (bytes)</option>
+                <option value="file_name_contains">Filename contains</option>
+                <option value="bucket_name_contains">Bucket name contains</option>
+                <option value="bucket_status">Bucket status</option>
+                <option value="provider">Provider</option>
+                <option value="file_count_gt">File count greater than</option>
+                <option value="classification">AI classification</option>
+              </select>
+              <input value={ruleForm.condValue} onChange={e=>setRuleForm({...ruleForm,condValue:e.target.value})} placeholder="Value" style={{...IS,flex:1,padding:'6px 10px',fontSize:11}}
+                onKeyDown={e=>{if(e.key==='Enter'&&ruleForm.condValue.trim()){setRuleForm({...ruleForm,conditions:[...ruleForm.conditions,{type:ruleForm.condType,value:ruleForm.condValue}],condValue:''})}}}/>
+              <button onClick={()=>{if(!ruleForm.condValue.trim())return;setRuleForm({...ruleForm,conditions:[...ruleForm.conditions,{type:ruleForm.condType,value:ruleForm.condValue}],condValue:''})}} style={{background:'var(--accent)',color:'#000',border:'none',borderRadius:6,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap' as const}}>+ Add</button>
+            </div>
+          </div>
+
+          <button onClick={async()=>{if(!ruleForm.name.trim()||!ruleForm.conditions.length){toast('Name and at least one condition required','error');return}; const r=await apiFetch('/alert-rules',{method:'POST',body:JSON.stringify({name:ruleForm.name,description:ruleForm.description,severity:ruleForm.severity,conditions:ruleForm.conditions})}); if(r?.id){toast('Rule created','success');setRuleForm({name:'',description:'',severity:'medium',conditions:[],condType:'file_extension',condValue:''});loadAlertRules()}else{toast(r?.error||'Failed','error')}}} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>Create Rule</button>
+        </div>
+
+        {/* Rules List */}
+        {alertRules.length===0 ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)',fontSize:13}}>No custom alert rules yet. Create one above.</div>
+        : alertRules.map((r:any)=>{const conds=typeof r.conditions==='string'?JSON.parse(r.conditions):r.conditions;return <div key={r.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:16,marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <span style={{fontWeight:700,fontSize:14}}>{r.name}</span>
+              <SevBadge s={r.severity}/>
+              <span style={{background:r.is_active?'rgba(0,232,123,0.15)':'rgba(240,72,72,0.15)',color:r.is_active?'var(--accent)':'#f04848',padding:'2px 8px',borderRadius:4,fontSize:9,fontWeight:700}}>{r.is_active?'ACTIVE':'DISABLED'}</span>
+              <span style={{fontSize:10,color:'var(--text-muted)'}}>{r.match_count} matches</span>
+            </div>
+            {r.description && <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:6}}>{r.description}</div>}
+            <div style={{display:'flex',gap:6,flexWrap:'wrap' as const}}>
+              {conds.map((c:any,i:number)=><span key={i} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',padding:'2px 8px',borderRadius:4,fontSize:10,color:'var(--text-secondary)'}}>{c.type}: <b>{c.value}</b></span>)}
+            </div>
+            {r.last_matched_at && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>Last match: {ago(r.last_matched_at)}</div>}
+          </div>
+          <div style={{display:'flex',gap:6,flexShrink:0}}>
+            <button onClick={async()=>{await apiFetch(`/alert-rules/${r.id}/toggle`,{method:'POST'});loadAlertRules()}} style={{padding:'5px 10px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--text-secondary)',borderRadius:6,fontSize:10,cursor:'pointer'}}>{r.is_active?'Disable':'Enable'}</button>
+            <button onClick={async()=>{await apiFetch(`/alert-rules/${r.id}`,{method:'DELETE'});loadAlertRules();toast('Rule deleted','success')}} style={{padding:'5px 10px',border:'1px solid var(--border-subtle)',background:'none',color:'var(--danger)',borderRadius:6,fontSize:10,cursor:'pointer'}}>Delete</button>
+          </div>
+        </div>})}
+      </div>}
+
+      {/* ─── EXECUTIVE DASHBOARD ─── */}
+      {view==='dashboard' && <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
+        <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>Executive Dashboard</h2>
+        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:24}}>High-level security posture overview with risk trends and SLA tracking.</p>
+
+        {!execDash ? <Spin/> : <>
+          {/* Top-level KPIs */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:24}}>
+            {[['Total Buckets',execDash.total_buckets,'var(--text-primary)'],['Open Buckets',execDash.open_buckets,'#f04848'],['Exposure Rate',execDash.exposure_rate+'%',execDash.exposure_rate>20?'#f04848':execDash.exposure_rate>5?'#f5a623':'var(--accent)'],['Total Files',fnum(execDash.total_files),'var(--text-primary)'],['Data Exposed',fmt(execDash.total_size_bytes),'var(--warning)']].map(([l,v,c]:any)=>
+              <div key={l} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:10,padding:16,textAlign:'center'}}>
+                <div style={{fontSize:24,fontWeight:800,color:c,fontFamily:'var(--font-display)'}}>{v}</div>
+                <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{l}</div></div>)}
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+            {/* Risk Distribution */}
+            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Risk Distribution</h3>
+              {execDash.risk_distribution && Object.entries(execDash.risk_distribution).length>0 ?
+                Object.entries(execDash.risk_distribution).map(([level,count]:any)=>{const c:any={critical:'#f04848',high:'#ff6b35',medium:'#f5a623',low:'#4a9eff',info:'#4a5f73'};return <div key={level} style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                  <div style={{width:80,fontSize:11,fontWeight:600,textTransform:'capitalize' as const,color:c[level]||'var(--text-secondary)'}}>{level}</div>
+                  <div style={{flex:1,height:8,background:'var(--bg-primary)',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',background:c[level]||'var(--text-muted)',borderRadius:4,width:`${Math.min(100,count/(execDash.total_buckets||1)*100)}%`}}/></div>
+                  <span style={{fontSize:12,fontWeight:600,width:40,textAlign:'right' as const}}>{count}</span>
+                </div>})
+              : <div style={{color:'var(--text-muted)',fontSize:12}}>No risk data yet. Run AI risk assessments on your buckets.</div>}
+            </div>
+
+            {/* Unresolved Alerts */}
+            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Unresolved Alerts</h3>
+              {execDash.unresolved_alerts && Object.entries(execDash.unresolved_alerts).length>0 ?
+                Object.entries(execDash.unresolved_alerts).map(([sev,count]:any)=><div key={sev} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                  <SevBadge s={sev}/><span style={{fontSize:14,fontWeight:700}}>{count}</span></div>)
+              : <div style={{color:'var(--text-muted)',fontSize:12}}>No unresolved alerts.</div>}
+            </div>
+          </div>
+
+          {/* Sensitive Files */}
+          {execDash.sensitive_files && Object.keys(execDash.sensitive_files).length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:24}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Sensitive Files Detected</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+              {Object.entries(execDash.sensitive_files).map(([cls,count]:any)=><div key={cls} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:12,textAlign:'center'}}>
+                <ClassBadge c={cls}/><div style={{fontSize:20,fontWeight:800,marginTop:8,color:'var(--text-primary)'}}>{count}</div></div>)}
+            </div>
+          </div>}
+
+          {/* Drift Summary */}
+          {execDash.drift_summary && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:24}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <h3 style={{fontSize:14,fontWeight:700,margin:0}}>Drift Summary</h3>
+              <button onClick={()=>{setView('drift');loadDriftDiffs();loadDriftSummary()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:11}}>View All →</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+              {[['Total Changes',execDash.drift_summary.total],['Unreviewed',execDash.drift_summary.unreviewed],['Critical',execDash.drift_summary.by_severity?.critical||0],['High',execDash.drift_summary.by_severity?.high||0]].map(([l,v]:any)=>
+                <div key={l} style={{textAlign:'center',padding:12,background:'var(--bg-primary)',borderRadius:8,border:'1px solid var(--border-subtle)'}}>
+                  <div style={{fontSize:20,fontWeight:800}}>{v}</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{l}</div></div>)}
+            </div>
+          </div>}
+
+          {/* Risk Trends Chart */}
+          {riskTrends?.risk_trends?.length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:24}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Scan Activity Trends (30 days)</h3>
+            <div style={{display:'flex',alignItems:'end',gap:2,height:120,padding:'0 4px'}}>
+              {riskTrends.risk_trends.map((d:any,i:number)=>{const maxFiles=Math.max(...riskTrends.risk_trends.map((x:any)=>x.total_files||0),1);const h=Math.max(4,((d.total_files||0)/maxFiles)*100);return <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}} title={`${d.day}: ${d.total_files||0} files, ${d.open_count||0} open`}>
+                <div style={{width:'100%',height:h,background:d.open_count>0?'linear-gradient(180deg,#f04848,#ff6b35)':'linear-gradient(180deg,var(--accent),#00c568)',borderRadius:'2px 2px 0 0',minHeight:4,transition:'height 0.3s'}}/>
+              </div>})}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:'var(--text-muted)',marginTop:4}}>
+              <span>{riskTrends.risk_trends[0]?.day}</span><span>{riskTrends.risk_trends[riskTrends.risk_trends.length-1]?.day}</span>
+            </div>
+          </div>}
+
+          {/* Remediation SLA */}
+          {remSla && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Remediation SLA</h3>
+              {remSla.time_to_close && Object.entries(remSla.time_to_close).length>0 ?
+                Object.entries(remSla.time_to_close).map(([pri,data]:any)=><div key={pri} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                  <span style={{fontSize:12,fontWeight:600,textTransform:'capitalize' as const}}>{pri}</span>
+                  <span style={{fontSize:12,color:'var(--text-secondary)'}}>Avg {data.avg_days}d ({data.count} closed)</span></div>)
+              : <div style={{color:'var(--text-muted)',fontSize:12}}>No completed remediations yet.</div>}
+            </div>
+            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Open Remediation Aging</h3>
+              {remSla.open_aging ? <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+                {[['< 7 days',remSla.open_aging.this_week,'var(--accent)'],['7-30 days',remSla.open_aging.this_month,'var(--warning)'],['> 30 days',remSla.open_aging.older,'#f04848']].map(([l,v,c]:any)=>
+                  <div key={l} style={{textAlign:'center',padding:12,background:'var(--bg-primary)',borderRadius:8}}>
+                    <div style={{fontSize:20,fontWeight:800,color:c}}>{v||0}</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{l}</div></div>)}
+              </div> : <div style={{color:'var(--text-muted)',fontSize:12}}>No open remediations.</div>}
+            </div>
+          </div>}
+
+          {/* Top Exposed Buckets */}
+          {execDash.top_exposed_buckets?.length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Top Exposed Buckets</h3>
+            <div style={{display:'grid',gridTemplateColumns:'2fr 80px 80px 80px',gap:8,padding:'6px 12px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,borderBottom:'1px solid var(--border-subtle)'}}><span>Bucket</span><span>Files</span><span>Status</span><span>Risk</span></div>
+            {execDash.top_exposed_buckets.map((b:any,i:number)=><div key={i} style={{display:'grid',gridTemplateColumns:'2fr 80px 80px 80px',gap:8,padding:'8px 12px',alignItems:'center',background:i%2===0?'var(--bg-primary)':'transparent',borderRadius:4}}>
+              <span style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{b.name}</span>
+              <span style={{fontSize:12}}>{fnum(b.file_count)}</span>
+              <SBadge s={b.status}/>
+              {b.risk_score!=null ? <RiskBadge score={b.risk_score} level={b.risk_level||'info'}/> : <span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}
+            </div>)}
           </div>}
         </>}
       </div>}
