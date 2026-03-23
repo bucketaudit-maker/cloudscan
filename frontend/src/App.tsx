@@ -119,6 +119,9 @@ export default function App() {
   const [tagForm, setTagForm] = useState({name:'',color:'#6b7280'})
   const [schedForm, setSchedForm] = useState({name:'',keywords:'',companies:'',frequency:'daily'})
   const [showTagPicker, setShowTagPicker] = useState<number|null>(null)
+  const [bucketSearch, setBucketSearch] = useState('')
+  const [bucketStatusFilter, setBucketStatusFilter] = useState('')
+  const [bucketProviderFilter, setBucketProviderFilter] = useState('')
   // Sprint 6 state: 2FA, Drift, Alert Rules, Dashboard
   const [twoFaStatus, setTwoFaStatus] = useState<any>(null)
   const [twoFaSetup, setTwoFaSetup] = useState<any>(null)
@@ -201,7 +204,7 @@ export default function App() {
   const doPreview = async(fileId:number) => { if(previewFile===fileId){setPreviewFile(null);setPreviewData(null);return} setPreviewFile(fileId); setPreviewLoading(true); const d=await apiFetch(`/files/${fileId}/preview`); setPreviewData(d); setPreviewLoading(false) }
 
   const doSearch = useCallback(async(q:string, f:any=sf, useRegex:boolean=regexMode, af:any=advFilters) => { if(!q.trim())return; setSLoading(true); setView('search'); setSq(q); const p:any={...f}; if(useRegex){p.regex=q}else{p.q=q} if(af.date_from)p.date_from=af.date_from; if(af.date_to)p.date_to=af.date_to; if(af.min_size)p.min_size=af.min_size; if(af.max_size)p.max_size=af.max_size; Object.keys(p).forEach((k:string)=>!p[k]&&delete p[k]); const qs=new URLSearchParams(p).toString(); const d=await apiFetch(`/files?${qs}`); setSr(d||{items:[],total:0,page:1,per_page:50,query:q,response_time_ms:0}); setSLoading(false); setOnboarding(o=>({...o,firstSearch:true})) },[sf,regexMode,advFilters])
-  const loadBk = useCallback(async(f:any={}) => { const qs=new URLSearchParams(f).toString(); setBuckets(await apiFetch(`/buckets?${qs}`)||{items:[],total:0,page:1}); setView('buckets'); loadBookmarkIds(); loadTags() },[])
+  const loadBk = useCallback(async(f:any={}) => { const params:any={...f}; if(!params.search && bucketSearch) params.search=bucketSearch; if(!params.provider && bucketProviderFilter) params.provider=bucketProviderFilter; if(!params.status && bucketStatusFilter) params.status=bucketStatusFilter; Object.keys(params).forEach(k=>{if(!params[k])delete params[k]}); const qs=new URLSearchParams(params).toString(); setBuckets(await apiFetch(`/buckets?${qs}`)||{items:[],total:0,page:1}); setView('buckets'); loadBookmarkIds(); loadTags() },[bucketSearch,bucketProviderFilter,bucketStatusFilter])
   const loadBd = useCallback(async(id:number) => { setBd(await apiFetch(`/buckets/${id}`)||null); setView('bucket-detail') },[])
   const startScan = async() => {
     const d:any={keywords:scanForm.keywords.split(',').map((s:string)=>s.trim()).filter(Boolean),companies:scanForm.companies.split(',').map((s:string)=>s.trim()).filter(Boolean)}
@@ -532,9 +535,20 @@ export default function App() {
 
       {/* ─── BUCKETS ─── */}
       {view==='buckets' && <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20,flexWrap:'wrap',gap:12}}>
-          <h2 style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>Public Buckets <span style={{fontSize:13,color:'var(--text-muted)',marginLeft:12}}>{fnum(buckets?.total||0)} indexed</span></h2>
-          <div style={{display:'flex',gap:6}}>{['all','aws','azure','gcp','digitalocean','alibaba'].map(p=><button key={p} onClick={()=>loadBk(p==='all'?{}:{provider:p})} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'5px 12px',color:'var(--text-tertiary)',fontSize:11,cursor:'pointer'}}>{p==='all'?'All':PL[p]}</button>)}</div></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
+          <h2 style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>Public Buckets <span style={{fontSize:13,color:'var(--text-muted)',marginLeft:12}}>{fnum(buckets?.total||0)} indexed</span></h2></div>
+        <div className="card-static" style={{padding:16,marginBottom:20,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+          <div style={{flex:1,minWidth:200,display:'flex',alignItems:'center',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,overflow:'hidden'}}>
+            <span style={{padding:'0 12px',color:'var(--text-muted)',fontSize:14}}>⌕</span>
+            <input value={bucketSearch} onChange={e=>setBucketSearch(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')loadBk({page:1})}} placeholder="Search by bucket name..." style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:13,padding:'10px 12px 10px 0',fontFamily:'var(--font-body)'}}/>
+            {bucketSearch && <button onClick={()=>{setBucketSearch('');setTimeout(()=>loadBk({page:1,search:''}),0)}} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'0 10px',fontSize:14}}>✕</button>}
+          </div>
+          <select value={bucketStatusFilter} onChange={e=>{setBucketStatusFilter(e.target.value);loadBk({page:1,status:e.target.value||undefined})}} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'9px 12px',color:'var(--text-secondary)',fontSize:12,fontFamily:'var(--font-body)',cursor:'pointer',minWidth:110}}>
+            <option value="">All Status</option><option value="open">Open</option><option value="closed">Closed</option><option value="partial">Partial</option>
+          </select>
+          <div style={{display:'flex',gap:4}}>{['all','aws','azure','gcp','digitalocean','alibaba'].map(p=><button key={p} onClick={()=>{const v=p==='all'?'':p;setBucketProviderFilter(v);loadBk({page:1,provider:v||undefined})}} style={{background:bucketProviderFilter===(p==='all'?'':p)?'var(--accent-bg)':'var(--bg-primary)',border:`1px solid ${bucketProviderFilter===(p==='all'?'':p)?'var(--accent)':'var(--border-subtle)'}`,borderRadius:6,padding:'5px 10px',color:bucketProviderFilter===(p==='all'?'':p)?'var(--accent)':'var(--text-tertiary)',fontSize:11,cursor:'pointer',fontWeight:bucketProviderFilter===(p==='all'?'':p)?600:400}}>{p==='all'?'All':PL[p]}</button>)}</div>
+          <button onClick={()=>loadBk({page:1})} className="btn-primary" style={{padding:'9px 20px',fontSize:12,fontFamily:'var(--font-body)',borderRadius:8}}>Search</button>
+        </div>
         <div style={{display:'grid',gridTemplateColumns:'28px 1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'8px 16px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',borderBottom:'1px solid var(--border-subtle)'}}><span>★</span><span>Bucket</span><span>Provider</span><span>Region</span><span>Status</span><span>Risk</span><span>Files</span><span>Size</span><span>Scanned</span></div>
         {buckets?.items?.map((b:any,i:number)=><div key={b.id} onClick={()=>loadBd(b.id)} style={{display:'grid',gridTemplateColumns:'28px 1fr 95px 85px 75px 90px 85px 85px 75px',gap:12,padding:'12px 16px',alignItems:'center',cursor:'pointer',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
           <span onClick={e=>{e.stopPropagation();apiFetch('/bookmarks',{method:'POST',body:JSON.stringify({bucket_id:b.id})}).then(()=>loadBookmarkIds())}} style={{fontSize:16,cursor:'pointer',color:bookmarkIds.includes(b.id)?'var(--accent)':'var(--text-muted)',transition:'color 0.2s'}} title={bookmarkIds.includes(b.id)?'Remove bookmark':'Bookmark'}>{bookmarkIds.includes(b.id)?'★':'☆'}</span>
