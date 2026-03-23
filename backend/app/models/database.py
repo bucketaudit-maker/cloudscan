@@ -505,6 +505,96 @@ CREATE INDEX IF NOT EXISTS idx_scan_schedules_user ON scan_schedules(user_id);
 CREATE INDEX IF NOT EXISTS idx_scan_schedules_next ON scan_schedules(next_run_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
+
+-- ═══ Sprint 6: 2FA, Drift Detection, Alert Rules, CSRF, Dashboard ═══
+
+-- Scan Snapshots (for drift detection)
+CREATE TABLE IF NOT EXISTS scan_snapshots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_job_id     INTEGER NOT NULL REFERENCES scan_jobs(id) ON DELETE CASCADE,
+    bucket_id       INTEGER NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL,
+    file_count      INTEGER DEFAULT 0,
+    total_size_bytes INTEGER DEFAULT 0,
+    file_hashes     TEXT DEFAULT '[]',
+    captured_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE(scan_job_id, bucket_id)
+);
+
+-- Scan Diffs
+CREATE TABLE IF NOT EXISTS scan_diffs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    bucket_id       INTEGER NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    old_snapshot_id INTEGER REFERENCES scan_snapshots(id) ON DELETE SET NULL,
+    new_snapshot_id INTEGER NOT NULL REFERENCES scan_snapshots(id) ON DELETE CASCADE,
+    diff_type       TEXT NOT NULL CHECK(diff_type IN ('new_bucket','status_change','files_added','files_removed','size_change')),
+    summary         TEXT NOT NULL,
+    details         TEXT DEFAULT '{}',
+    severity        TEXT DEFAULT 'info' CHECK(severity IN ('critical','high','medium','low','info')),
+    is_reviewed     BOOLEAN DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Custom Alert Rules
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    is_active       BOOLEAN DEFAULT 1,
+    conditions      TEXT NOT NULL DEFAULT '[]',
+    actions         TEXT NOT NULL DEFAULT '["alert"]',
+    severity        TEXT DEFAULT 'medium' CHECK(severity IN ('critical','high','medium','low','info')),
+    match_count     INTEGER DEFAULT 0,
+    last_matched_at TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- CSRF Tokens
+CREATE TABLE IF NOT EXISTS csrf_tokens (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    token           TEXT UNIQUE NOT NULL,
+    user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    session_id      TEXT,
+    expires_at      TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Dashboard Stats Cache
+CREATE TABLE IF NOT EXISTS dashboard_stats_cache (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    stat_type       TEXT NOT NULL,
+    data            TEXT NOT NULL DEFAULT '{}',
+    computed_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE(user_id, stat_type)
+);
+
+-- Sprint 6 indexes
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_job ON scan_snapshots(scan_job_id);
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_bucket ON scan_snapshots(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_scan_snapshots_time ON scan_snapshots(captured_at);
+CREATE INDEX IF NOT EXISTS idx_scan_diffs_bucket ON scan_diffs(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_scan_diffs_new_snap ON scan_diffs(new_snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_scan_diffs_created ON scan_diffs(created_at);
+CREATE INDEX IF NOT EXISTS idx_scan_diffs_severity ON scan_diffs(severity);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_user ON alert_rules(user_id);
+CREATE INDEX IF NOT EXISTS idx_csrf_tokens_token ON csrf_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_dashboard_cache_user ON dashboard_stats_cache(user_id);
+
+-- Additional performance indexes
+CREATE INDEX IF NOT EXISTS idx_files_bucket_ext ON files(bucket_id, extension);
+CREATE INDEX IF NOT EXISTS idx_files_content_type ON files(content_type);
+CREATE INDEX IF NOT EXISTS idx_files_last_modified ON files(last_modified);
+CREATE INDEX IF NOT EXISTS idx_buckets_first_seen ON buckets(first_seen);
+CREATE INDEX IF NOT EXISTS idx_buckets_status_provider ON buckets(status, provider_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts(is_resolved);
+CREATE INDEX IF NOT EXISTS idx_remediations_due ON remediations(due_date);
+CREATE INDEX IF NOT EXISTS idx_remediations_completed ON remediations(completed_at);
+CREATE INDEX IF NOT EXISTS idx_scan_jobs_created_by ON scan_jobs(created_by);
+CREATE INDEX IF NOT EXISTS idx_scan_jobs_completed ON scan_jobs(completed_at);
 """
 
 SEED_PROVIDERS = [
@@ -2673,3 +2763,571 @@ class AuditLogStore:
             params.extend([per_page, (page - 1) * per_page])
             rows = db.execute(q, tuple(params)).fetchall()
             return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — SCAN SNAPSHOTS & DRIFT DETECTION
+# ═══════════════════════════════════════════════════════════════════
+
+class ScanSnapshotStore:
+    @staticmethod
+    def capture(scan_job_id: int, bucket_id: int, status: str,
+                file_count: int, total_size_bytes: int, file_hashes: list = None) -> dict:
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            hashes_str = json.dumps(file_hashes or [])
+            if settings.is_postgres:
+                db.execute("""
+                    INSERT INTO scan_snapshots (scan_job_id, bucket_id, status, file_count, total_size_bytes, file_hashes, captured_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (scan_job_id, bucket_id) DO UPDATE SET
+                        status=excluded.status, file_count=excluded.file_count,
+                        total_size_bytes=excluded.total_size_bytes, file_hashes=excluded.file_hashes,
+                        captured_at=excluded.captured_at
+                """, (scan_job_id, bucket_id, status, file_count, total_size_bytes, hashes_str, now))
+            else:
+                db.execute("""
+                    INSERT OR REPLACE INTO scan_snapshots (scan_job_id, bucket_id, status, file_count, total_size_bytes, file_hashes, captured_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (scan_job_id, bucket_id, status, file_count, total_size_bytes, hashes_str, now))
+            row = db.execute(
+                "SELECT * FROM scan_snapshots WHERE scan_job_id=%s AND bucket_id=%s",
+                (scan_job_id, bucket_id),
+            ).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def get_latest_for_bucket(bucket_id: int) -> Optional[dict]:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM scan_snapshots WHERE bucket_id=%s ORDER BY captured_at DESC LIMIT 1",
+                (bucket_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def get_previous_for_bucket(bucket_id: int, before_snapshot_id: int) -> Optional[dict]:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM scan_snapshots WHERE bucket_id=%s AND id < %s ORDER BY captured_at DESC LIMIT 1",
+                (bucket_id, before_snapshot_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def list_for_bucket(bucket_id: int, limit: int = 20) -> list[dict]:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM scan_snapshots WHERE bucket_id=%s ORDER BY captured_at DESC LIMIT %s",
+                (bucket_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def list_for_job(scan_job_id: int) -> list[dict]:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM scan_snapshots WHERE scan_job_id=%s ORDER BY bucket_id",
+                (scan_job_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+
+class ScanDiffStore:
+    @staticmethod
+    def create(bucket_id: int, old_snapshot_id: int, new_snapshot_id: int,
+               diff_type: str, summary: str, details: dict = None, severity: str = "info") -> dict:
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute("""
+                INSERT INTO scan_diffs (bucket_id, old_snapshot_id, new_snapshot_id, diff_type,
+                    summary, details, severity, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (bucket_id, old_snapshot_id, new_snapshot_id, diff_type,
+                  summary, json.dumps(details or {}), severity, now))
+            row = db.execute("SELECT * FROM scan_diffs WHERE id=%s", (db.lastrowid,)).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_for_bucket(bucket_id: int, page: int = 1, per_page: int = 50) -> dict:
+        with get_db() as db:
+            q = "SELECT * FROM scan_diffs WHERE bucket_id=%s"
+            params = [bucket_id]
+            total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
+            q += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {"items": [dict(r) for r in rows], "total": total, "page": page}
+
+    @staticmethod
+    def list_recent(user_id: int = None, severity: str = None, unreviewed_only: bool = False,
+                    page: int = 1, per_page: int = 50) -> dict:
+        with get_db() as db:
+            q = """SELECT d.*, b.name as bucket_name, b.url as bucket_url,
+                          p.name as provider_name, p.display_name as provider_display
+                   FROM scan_diffs d
+                   JOIN buckets b ON d.bucket_id=b.id
+                   JOIN providers p ON b.provider_id=p.id
+                   WHERE 1=1"""
+            params = []
+            if severity:
+                q += " AND d.severity=%s"
+                params.append(severity)
+            if unreviewed_only:
+                q += f" AND d.is_reviewed={_bool_sql(False)}"
+            total = db.execute(f"SELECT COUNT(*) FROM ({q})", tuple(params)).fetchone()[0]
+            q += " ORDER BY d.created_at DESC LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            rows = db.execute(q, tuple(params)).fetchall()
+            return {"items": [dict(r) for r in rows], "total": total, "page": page}
+
+    @staticmethod
+    def mark_reviewed(diff_id: int):
+        with get_db() as db:
+            db.execute(f"UPDATE scan_diffs SET is_reviewed={_bool_sql(True)} WHERE id=%s", (diff_id,))
+            return db.rowcount > 0
+
+    @staticmethod
+    def get_summary() -> dict:
+        with get_db() as db:
+            total = db.execute("SELECT COUNT(*) FROM scan_diffs").fetchone()[0]
+            unreviewed = db.execute(
+                f"SELECT COUNT(*) FROM scan_diffs WHERE is_reviewed={_bool_sql(False)}"
+            ).fetchone()[0]
+            by_severity = db.execute("""
+                SELECT severity, COUNT(*) as cnt FROM scan_diffs
+                GROUP BY severity ORDER BY cnt DESC
+            """).fetchall()
+            by_type = db.execute("""
+                SELECT diff_type, COUNT(*) as cnt FROM scan_diffs
+                GROUP BY diff_type ORDER BY cnt DESC
+            """).fetchall()
+            return {
+                "total": total,
+                "unreviewed": unreviewed,
+                "by_severity": {r["severity"]: r["cnt"] for r in by_severity},
+                "by_type": {r["diff_type"]: r["cnt"] for r in by_type},
+            }
+
+    @staticmethod
+    def compute_diffs(scan_job_id: int) -> list[dict]:
+        """Compare snapshots from this scan against previous snapshots for each bucket."""
+        diffs = []
+        snapshots = ScanSnapshotStore.list_for_job(scan_job_id)
+        for snap in snapshots:
+            bucket_id = snap["bucket_id"]
+            prev = ScanSnapshotStore.get_previous_for_bucket(bucket_id, snap["id"])
+
+            if not prev:
+                # New bucket first seen
+                d = ScanDiffStore.create(
+                    bucket_id=bucket_id,
+                    old_snapshot_id=None,
+                    new_snapshot_id=snap["id"],
+                    diff_type="new_bucket",
+                    summary=f"New bucket discovered with {snap['file_count']} files",
+                    details={"file_count": snap["file_count"], "status": snap["status"]},
+                    severity="high" if snap["status"] == "open" else "info",
+                )
+                diffs.append(d)
+                continue
+
+            # Status change
+            if prev["status"] != snap["status"]:
+                sev = "critical" if snap["status"] == "open" and prev["status"] == "closed" else \
+                      "high" if snap["status"] == "open" else "info"
+                d = ScanDiffStore.create(
+                    bucket_id=bucket_id,
+                    old_snapshot_id=prev["id"],
+                    new_snapshot_id=snap["id"],
+                    diff_type="status_change",
+                    summary=f"Status changed: {prev['status']} → {snap['status']}",
+                    details={"old_status": prev["status"], "new_status": snap["status"]},
+                    severity=sev,
+                )
+                diffs.append(d)
+
+            # Files added
+            file_diff = snap["file_count"] - prev["file_count"]
+            if file_diff > 0:
+                sev = "high" if file_diff > 100 else "medium" if file_diff > 10 else "low"
+                d = ScanDiffStore.create(
+                    bucket_id=bucket_id,
+                    old_snapshot_id=prev["id"],
+                    new_snapshot_id=snap["id"],
+                    diff_type="files_added",
+                    summary=f"{file_diff} new files detected (was {prev['file_count']}, now {snap['file_count']})",
+                    details={"old_count": prev["file_count"], "new_count": snap["file_count"], "diff": file_diff},
+                    severity=sev,
+                )
+                diffs.append(d)
+
+            # Files removed
+            if file_diff < 0:
+                d = ScanDiffStore.create(
+                    bucket_id=bucket_id,
+                    old_snapshot_id=prev["id"],
+                    new_snapshot_id=snap["id"],
+                    diff_type="files_removed",
+                    summary=f"{abs(file_diff)} files removed (was {prev['file_count']}, now {snap['file_count']})",
+                    details={"old_count": prev["file_count"], "new_count": snap["file_count"], "diff": file_diff},
+                    severity="low",
+                )
+                diffs.append(d)
+
+            # Significant size change (>20%)
+            if prev["total_size_bytes"] > 0:
+                size_pct = abs(snap["total_size_bytes"] - prev["total_size_bytes"]) / prev["total_size_bytes"]
+                if size_pct > 0.2:
+                    d = ScanDiffStore.create(
+                        bucket_id=bucket_id,
+                        old_snapshot_id=prev["id"],
+                        new_snapshot_id=snap["id"],
+                        diff_type="size_change",
+                        summary=f"Size changed by {size_pct:.0%} ({prev['total_size_bytes']} → {snap['total_size_bytes']} bytes)",
+                        details={"old_size": prev["total_size_bytes"], "new_size": snap["total_size_bytes"],
+                                 "pct_change": round(size_pct * 100, 1)},
+                        severity="medium" if size_pct > 1.0 else "low",
+                    )
+                    diffs.append(d)
+
+        return diffs
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — CUSTOM ALERT RULES
+# ═══════════════════════════════════════════════════════════════════
+
+class AlertRuleStore:
+    @staticmethod
+    def create(user_id: int, name: str, conditions: list, severity: str = "medium",
+               description: str = None, actions: list = None) -> dict:
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute("""
+                INSERT INTO alert_rules (user_id, name, description, conditions, actions, severity, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (user_id, name, description, json.dumps(conditions),
+                  json.dumps(actions or ["alert"]), severity, now, now))
+            row = db.execute("SELECT * FROM alert_rules WHERE id=%s", (db.lastrowid,)).fetchone()
+            return dict(row) if row else {}
+
+    @staticmethod
+    def list_by_user(user_id: int) -> list[dict]:
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT * FROM alert_rules WHERE user_id=%s ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def get(rule_id: int, user_id: int) -> Optional[dict]:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM alert_rules WHERE id=%s AND user_id=%s",
+                (rule_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def update(rule_id: int, user_id: int, **kwargs) -> bool:
+        allowed = {"name", "description", "conditions", "actions", "severity", "is_active"}
+        updates, params = [], []
+        for k, v in kwargs.items():
+            if k in allowed and v is not None:
+                if k in ("conditions", "actions") and isinstance(v, list):
+                    v = json.dumps(v)
+                updates.append(f"{k}=%s")
+                params.append(v)
+        if not updates:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        updates.append("updated_at=%s")
+        params.append(now)
+        params.extend([rule_id, user_id])
+        with get_db() as db:
+            db.execute(
+                f"UPDATE alert_rules SET {','.join(updates)} WHERE id=%s AND user_id=%s",
+                tuple(params),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def delete(rule_id: int, user_id: int) -> bool:
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM alert_rules WHERE id=%s AND user_id=%s",
+                (rule_id, user_id),
+            )
+            return db.rowcount > 0
+
+    @staticmethod
+    def increment_match(rule_id: int):
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute(
+                "UPDATE alert_rules SET match_count=match_count+1, last_matched_at=%s WHERE id=%s",
+                (now, rule_id),
+            )
+
+    @staticmethod
+    def get_active_for_user(user_id: int) -> list[dict]:
+        with get_db() as db:
+            rows = db.execute(
+                f"SELECT * FROM alert_rules WHERE user_id=%s AND is_active={_bool_sql(True)}",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def evaluate_bucket(user_id: int, bucket: dict, files: list[dict] = None) -> list[dict]:
+        """Evaluate all active rules for a user against a bucket/files. Returns triggered alerts."""
+        rules = AlertRuleStore.get_active_for_user(user_id)
+        triggered = []
+        for rule in rules:
+            conditions = json.loads(rule["conditions"]) if isinstance(rule["conditions"], str) else rule["conditions"]
+            matched = True
+            for cond in conditions:
+                cond_type = cond.get("type")
+                if cond_type == "file_extension":
+                    target_ext = cond.get("value", "").lower().lstrip(".")
+                    if not files or not any(
+                        (f.get("extension", "").lower().lstrip(".") == target_ext) for f in files
+                    ):
+                        matched = False
+                        break
+                elif cond_type == "file_size_gt":
+                    threshold = int(cond.get("value", 0))
+                    if not files or not any(f.get("size_bytes", 0) > threshold for f in files):
+                        matched = False
+                        break
+                elif cond_type == "file_name_contains":
+                    pattern = cond.get("value", "").lower()
+                    if not files or not any(pattern in f.get("filename", "").lower() for f in files):
+                        matched = False
+                        break
+                elif cond_type == "bucket_name_contains":
+                    pattern = cond.get("value", "").lower()
+                    if pattern not in bucket.get("name", "").lower():
+                        matched = False
+                        break
+                elif cond_type == "bucket_status":
+                    target_status = cond.get("value", "open")
+                    if bucket.get("status") != target_status:
+                        matched = False
+                        break
+                elif cond_type == "provider":
+                    target_provider = cond.get("value", "")
+                    if bucket.get("provider_name", "") != target_provider:
+                        matched = False
+                        break
+                elif cond_type == "file_count_gt":
+                    threshold = int(cond.get("value", 0))
+                    if bucket.get("file_count", 0) <= threshold:
+                        matched = False
+                        break
+                elif cond_type == "classification":
+                    target_class = cond.get("value", "")
+                    if not files or not any(f.get("ai_classification") == target_class for f in files):
+                        matched = False
+                        break
+
+            if matched:
+                AlertRuleStore.increment_match(rule["id"])
+                triggered.append({
+                    "rule_id": rule["id"],
+                    "rule_name": rule["name"],
+                    "severity": rule["severity"],
+                    "actions": json.loads(rule["actions"]) if isinstance(rule["actions"], str) else rule["actions"],
+                })
+        return triggered
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — CSRF TOKENS
+# ═══════════════════════════════════════════════════════════════════
+
+class CsrfTokenStore:
+    @staticmethod
+    def generate(user_id: int = None, session_id: str = None) -> str:
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO csrf_tokens (token, user_id, session_id, expires_at) VALUES (%s, %s, %s, %s)",
+                (token, user_id, session_id, expires),
+            )
+        return token
+
+    @staticmethod
+    def validate(token: str, user_id: int = None) -> bool:
+        if not token:
+            return False
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM csrf_tokens WHERE token=%s", (token,)
+            ).fetchone()
+            if not row:
+                return False
+            # Check expiry
+            expires = datetime.fromisoformat(str(row["expires_at"]))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires < datetime.now(timezone.utc):
+                db.execute("DELETE FROM csrf_tokens WHERE id=%s", (row["id"],))
+                return False
+            # Consume token (single-use)
+            db.execute("DELETE FROM csrf_tokens WHERE id=%s", (row["id"],))
+            return True
+
+    @staticmethod
+    def cleanup_expired():
+        with get_db() as db:
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute("DELETE FROM csrf_tokens WHERE expires_at < %s", (now,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATA ACCESS — DASHBOARD STATS
+# ═══════════════════════════════════════════════════════════════════
+
+class DashboardStatsStore:
+    @staticmethod
+    def get_risk_trends(days: int = 30) -> dict:
+        """Get risk score trends over time by looking at scan snapshots."""
+        with get_db() as db:
+            if settings.is_postgres:
+                rows = db.execute("""
+                    SELECT captured_at::date::text as day,
+                           COUNT(DISTINCT bucket_id) as buckets_scanned,
+                           AVG(file_count) as avg_files,
+                           SUM(file_count) as total_files,
+                           COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
+                           COUNT(CASE WHEN status='closed' THEN 1 END) as closed_count
+                    FROM scan_snapshots
+                    WHERE captured_at >= NOW() - INTERVAL '%s days'
+                    GROUP BY captured_at::date
+                    ORDER BY day
+                """ % days).fetchall()
+            else:
+                cutoff = f"-{days} days"
+                rows = db.execute("""
+                    SELECT date(captured_at) as day,
+                           COUNT(DISTINCT bucket_id) as buckets_scanned,
+                           AVG(file_count) as avg_files,
+                           SUM(file_count) as total_files,
+                           SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_count,
+                           SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed_count
+                    FROM scan_snapshots
+                    WHERE captured_at >= datetime('now', %s)
+                    GROUP BY date(captured_at)
+                    ORDER BY day
+                """, (cutoff,)).fetchall()
+            return {"risk_trends": [dict(r) for r in rows], "days": days}
+
+    @staticmethod
+    def get_remediation_sla(user_id: int) -> dict:
+        """Get remediation SLA metrics."""
+        with get_db() as db:
+            base_where = "WHERE (user_id=%s OR assigned_to=%s)"
+            params = [user_id, user_id]
+
+            # Average time to close
+            closed_rows = db.execute(f"""
+                SELECT priority,
+                       COUNT(*) as count,
+                       AVG(CASE WHEN completed_at IS NOT NULL AND created_at IS NOT NULL
+                           THEN julianday(completed_at) - julianday(created_at) END) as avg_days_to_close
+                FROM remediations {base_where} AND status='closed' AND completed_at IS NOT NULL
+                GROUP BY priority
+            """, tuple(params)).fetchall()
+
+            # Overdue count by priority
+            now = datetime.now(timezone.utc).isoformat()
+            overdue_params = list(params) + [now]
+            overdue_rows = db.execute(f"""
+                SELECT priority, COUNT(*) as cnt
+                FROM remediations {base_where} AND due_date < %s AND status NOT IN ('closed','verified')
+                GROUP BY priority
+            """, tuple(overdue_params)).fetchall()
+
+            # Open aging
+            aging_rows = db.execute(f"""
+                SELECT
+                    SUM(CASE WHEN julianday('now') - julianday(created_at) <= 7 THEN 1 ELSE 0 END) as this_week,
+                    SUM(CASE WHEN julianday('now') - julianday(created_at) BETWEEN 7 AND 30 THEN 1 ELSE 0 END) as this_month,
+                    SUM(CASE WHEN julianday('now') - julianday(created_at) > 30 THEN 1 ELSE 0 END) as older
+                FROM remediations {base_where} AND status NOT IN ('closed','verified')
+            """, tuple(params)).fetchone()
+
+            return {
+                "time_to_close": {r["priority"]: {"count": r["count"], "avg_days": round(r["avg_days_to_close"] or 0, 1)} for r in closed_rows},
+                "overdue_by_priority": {r["priority"]: r["cnt"] for r in overdue_rows},
+                "open_aging": dict(aging_rows) if aging_rows else {"this_week": 0, "this_month": 0, "older": 0},
+            }
+
+    @staticmethod
+    def get_executive_summary(user_id: int = None) -> dict:
+        """High-level executive dashboard stats."""
+        with get_db() as db:
+            # Overall stats
+            total_buckets = db.execute("SELECT COUNT(*) FROM buckets").fetchone()[0]
+            open_buckets = db.execute("SELECT COUNT(*) FROM buckets WHERE status='open'").fetchone()[0]
+            total_files = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            total_size = db.execute("SELECT COALESCE(SUM(size_bytes),0) FROM files").fetchone()[0]
+
+            # Risk distribution
+            risk_dist = db.execute("""
+                SELECT risk_level, COUNT(*) as cnt
+                FROM buckets WHERE risk_level IS NOT NULL
+                GROUP BY risk_level
+            """).fetchall()
+
+            # Sensitive file counts
+            sensitive = db.execute("""
+                SELECT ai_classification, COUNT(*) as cnt
+                FROM files WHERE ai_classification IN ('credentials','pii','financial','medical')
+                GROUP BY ai_classification
+            """).fetchall()
+
+            # Recent activity
+            recent_scans = db.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+                       SUM(buckets_found) as buckets_found,
+                       SUM(files_indexed) as files_indexed
+                FROM scan_jobs
+                WHERE created_at >= datetime('now', '-7 days')
+            """).fetchone()
+
+            # Alert severity breakdown (unresolved)
+            alert_sev = db.execute(f"""
+                SELECT severity, COUNT(*) as cnt
+                FROM alerts WHERE is_resolved={_bool_sql(False)}
+                GROUP BY severity
+            """).fetchall()
+
+            # Top exposed organizations (by bucket name patterns)
+            top_exposed = db.execute("""
+                SELECT name, file_count, status, risk_level, risk_score
+                FROM buckets WHERE status='open'
+                ORDER BY file_count DESC LIMIT 10
+            """).fetchall()
+
+            # Drift summary
+            drift_summary = ScanDiffStore.get_summary()
+
+            return {
+                "total_buckets": total_buckets,
+                "open_buckets": open_buckets,
+                "exposure_rate": round((open_buckets / total_buckets * 100), 1) if total_buckets > 0 else 0,
+                "total_files": total_files,
+                "total_size_bytes": total_size,
+                "risk_distribution": {r["risk_level"]: r["cnt"] for r in risk_dist},
+                "sensitive_files": {r["ai_classification"]: r["cnt"] for r in sensitive},
+                "recent_scans": dict(recent_scans) if recent_scans else {},
+                "unresolved_alerts": {r["severity"]: r["cnt"] for r in alert_sev},
+                "top_exposed_buckets": [dict(r) for r in top_exposed],
+                "drift_summary": drift_summary,
+            }

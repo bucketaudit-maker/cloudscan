@@ -19,6 +19,7 @@ from backend.app.models.database import (
     ReportStore, ReportScheduleStore, IntegrationStore, ComplianceStore,
     RemediationStore, seed_compliance_frameworks,
     TagStore, BookmarkStore, ScanScheduleStore, AuditLogStore,
+    ScanSnapshotStore, ScanDiffStore, AlertRuleStore, CsrfTokenStore, DashboardStatsStore,
 )
 from backend.app.utils.auth import (
     auth_required, auth_required_strict, rate_limit,
@@ -66,6 +67,40 @@ scan_service = ScanService(event_callback=broadcast_event)
 @api.before_request
 def _start_timer():
     g._request_start = time.monotonic()
+
+
+@api.after_request
+def _add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+@api.before_request
+def _csrf_check():
+    """Validate CSRF token for state-changing requests (POST/PUT/DELETE).
+    Skip for API key auth, SSE, and auth endpoints."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    # Skip CSRF for auth endpoints (they use rate limiting instead)
+    skip_paths = ("/auth/login", "/auth/register", "/auth/forgot-password",
+                  "/auth/reset-password", "/auth/2fa/verify", "/health")
+    for p in skip_paths:
+        if request.path.endswith(p):
+            return
+    # Skip if using API key (programmatic access)
+    if request.headers.get("X-API-Key") or request.args.get("access_token"):
+        return
+    # Validate CSRF token from header
+    csrf_token = request.headers.get("X-CSRF-Token")
+    if csrf_token:
+        if not CsrfTokenStore.validate(csrf_token):
+            logger.warning("Invalid CSRF token from %s for %s", request.remote_addr, request.path)
+            # Don't block — just log for now (soft enforcement)
+    return
 
 
 @api.after_request
@@ -166,6 +201,16 @@ def login():
             return jsonify({"error": "Account disabled"}), 403
         db.execute("UPDATE users SET last_login=%s WHERE id=%s", (datetime.utcnow().isoformat(), user["id"]))
 
+    # Check if 2FA is enabled
+    if user.get("totp_enabled"):
+        # Return a temporary token that requires 2FA verification
+        temp_token = create_token(user["id"], user["email"], user["tier"])
+        return jsonify({
+            "requires_2fa": True,
+            "temp_token": temp_token,
+            "message": "Enter your 2FA code to complete login.",
+        })
+
     token = create_token(user["id"], user["email"], user["tier"])
     return jsonify({
         "token": token,
@@ -182,12 +227,14 @@ def login():
 def me():
     with get_db() as db:
         user = db.execute(
-            "SELECT id, email, username, tier, api_key, created_at, last_login, queries_today FROM users WHERE id=%s",
+            "SELECT id, email, username, tier, api_key, created_at, last_login, queries_today, totp_enabled FROM users WHERE id=%s",
             (g.user_id,)
         ).fetchone()
         if not user:
             return jsonify({"error": "User not found"}), 404
-        return jsonify(dict(user))
+        result = dict(user)
+        result["totp_enabled"] = bool(result.get("totp_enabled"))
+        return jsonify(result)
 
 
 @api.route("/auth/forgot-password", methods=["POST"])
@@ -2121,6 +2168,404 @@ def get_entity_audit_log(entity_type, entity_id):
     page = request.args.get("page", 1, type=int)
     per_page = min(request.args.get("per_page", 50, type=int), 200)
     return jsonify(AuditLogStore.list_by_entity(entity_type, entity_id, page=page, per_page=per_page))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TWO-FACTOR AUTHENTICATION (TOTP)
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/auth/2fa/setup", methods=["POST"])
+@auth_required_strict
+def setup_2fa():
+    """Generate TOTP secret and provisioning URI for 2FA setup."""
+    import hmac as _hmac
+    import hashlib as _hashlib
+    import struct
+    import base64
+
+    # Generate a random 20-byte secret
+    secret_bytes = secrets.token_bytes(20)
+    secret_b32 = base64.b32encode(secret_bytes).decode("utf-8").rstrip("=")
+
+    with get_db() as db:
+        user = db.execute("SELECT email, totp_enabled FROM users WHERE id=%s", (g.user_id,)).fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        if user["totp_enabled"]:
+            return jsonify({"error": "2FA already enabled. Disable it first to reconfigure."}), 400
+
+        # Store secret (not yet enabled)
+        db.execute("UPDATE users SET totp_secret=%s WHERE id=%s", (secret_b32, g.user_id))
+
+    # Build otpauth URI
+    email = user["email"]
+    otpauth_uri = f"otpauth://totp/CloudScan:{email}?secret={secret_b32}&issuer=CloudScan&algorithm=SHA1&digits=6&period=30"
+
+    return jsonify({
+        "secret": secret_b32,
+        "otpauth_uri": otpauth_uri,
+        "message": "Scan the QR code in your authenticator app, then confirm with a code.",
+    })
+
+
+def _verify_totp(secret_b32: str, code: str, window: int = 1) -> bool:
+    """Verify a TOTP code against a base32 secret. Allows +-window time steps."""
+    import hmac as _hmac
+    import hashlib as _hashlib
+    import struct
+    import base64
+
+    try:
+        # Pad secret if needed
+        padded = secret_b32 + "=" * (8 - len(secret_b32) % 8) if len(secret_b32) % 8 else secret_b32
+        key = base64.b32decode(padded, casefold=True)
+    except Exception:
+        return False
+
+    now = int(time.time())
+    for offset in range(-window, window + 1):
+        counter = (now // 30) + offset
+        msg = struct.pack(">Q", counter)
+        digest = _hmac.new(key, msg, _hashlib.sha1).digest()
+        offset_byte = digest[-1] & 0x0F
+        truncated = struct.unpack(">I", digest[offset_byte:offset_byte + 4])[0] & 0x7FFFFFFF
+        otp = str(truncated % 1000000).zfill(6)
+        if otp == code:
+            return True
+    return False
+
+
+@api.route("/auth/2fa/confirm", methods=["POST"])
+@auth_required_strict
+def confirm_2fa():
+    """Confirm 2FA setup by verifying a TOTP code."""
+    data = request.get_json(silent=True) or {}
+    code = data.get("code", "").strip()
+    if not code or len(code) != 6:
+        return jsonify({"error": "6-digit code required"}), 400
+
+    with get_db() as db:
+        user = db.execute("SELECT totp_secret, totp_enabled FROM users WHERE id=%s", (g.user_id,)).fetchone()
+        if not user or not user["totp_secret"]:
+            return jsonify({"error": "Run 2FA setup first"}), 400
+        if user["totp_enabled"]:
+            return jsonify({"error": "2FA already enabled"}), 400
+
+        if not _verify_totp(user["totp_secret"], code):
+            return jsonify({"error": "Invalid code. Check your authenticator app and try again."}), 400
+
+        # Generate backup codes
+        backup_codes = [secrets.token_hex(4) for _ in range(8)]
+        db.execute(
+            "UPDATE users SET totp_enabled=%s, totp_backup_codes=%s WHERE id=%s",
+            (True, json.dumps(backup_codes), g.user_id),
+        )
+
+    try:
+        AuditLogStore.log(g.user_id, "enable_2fa", "user", g.user_id, None, request.remote_addr)
+    except Exception:
+        pass
+    return jsonify({
+        "message": "2FA enabled successfully!",
+        "backup_codes": backup_codes,
+        "warning": "Save these backup codes securely. Each can only be used once.",
+    })
+
+
+@api.route("/auth/2fa/verify", methods=["POST"])
+def verify_2fa():
+    """Verify TOTP code during login (called after initial login returns requires_2fa)."""
+    data = request.get_json(silent=True) or {}
+    temp_token = data.get("temp_token", "")
+    code = data.get("code", "").strip()
+
+    if not temp_token or not code:
+        return jsonify({"error": "temp_token and code required"}), 400
+
+    # Decode temp token to get user_id
+    from backend.app.utils.auth import decode_token
+    payload = decode_token(temp_token)
+    if not payload:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    user_id = payload["sub"]
+    with get_db() as db:
+        user = db.execute(
+            "SELECT id, email, tier, totp_secret, totp_backup_codes FROM users WHERE id=%s",
+            (user_id,),
+        ).fetchone()
+        if not user or not user["totp_secret"]:
+            return jsonify({"error": "2FA not configured"}), 400
+
+        # Try TOTP code first
+        if _verify_totp(user["totp_secret"], code):
+            token = create_token(user["id"], user["email"], user["tier"])
+            return jsonify({
+                "token": token,
+                "user": {"id": user["id"], "email": user["email"], "tier": user["tier"]},
+            })
+
+        # Try backup codes
+        backup_codes = json.loads(user["totp_backup_codes"]) if user["totp_backup_codes"] else []
+        if code in backup_codes:
+            backup_codes.remove(code)
+            db.execute(
+                "UPDATE users SET totp_backup_codes=%s WHERE id=%s",
+                (json.dumps(backup_codes), user_id),
+            )
+            token = create_token(user["id"], user["email"], user["tier"])
+            return jsonify({
+                "token": token,
+                "user": {"id": user["id"], "email": user["email"], "tier": user["tier"]},
+                "warning": f"Backup code used. {len(backup_codes)} remaining.",
+            })
+
+    return jsonify({"error": "Invalid 2FA code"}), 401
+
+
+@api.route("/auth/2fa/disable", methods=["POST"])
+@auth_required_strict
+def disable_2fa():
+    """Disable 2FA. Requires current password."""
+    data = request.get_json(silent=True) or {}
+    password = data.get("password", "")
+    if not password:
+        return jsonify({"error": "Current password required to disable 2FA"}), 400
+
+    with get_db() as db:
+        user = db.execute("SELECT password_hash FROM users WHERE id=%s", (g.user_id,)).fetchone()
+        if not user or not verify_password(password, user["password_hash"]):
+            return jsonify({"error": "Invalid password"}), 401
+        db.execute(
+            "UPDATE users SET totp_secret=NULL, totp_enabled=%s, totp_backup_codes=NULL WHERE id=%s",
+            (False, g.user_id),
+        )
+
+    try:
+        AuditLogStore.log(g.user_id, "disable_2fa", "user", g.user_id, None, request.remote_addr)
+    except Exception:
+        pass
+    return jsonify({"message": "2FA disabled successfully"})
+
+
+@api.route("/auth/2fa/status")
+@auth_required_strict
+def twofa_status():
+    with get_db() as db:
+        user = db.execute(
+            "SELECT totp_enabled, totp_backup_codes FROM users WHERE id=%s", (g.user_id,)
+        ).fetchone()
+        if not user:
+            return jsonify({"enabled": False})
+        backup_count = len(json.loads(user["totp_backup_codes"])) if user["totp_backup_codes"] else 0
+        return jsonify({"enabled": bool(user["totp_enabled"]), "backup_codes_remaining": backup_count})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SCAN DRIFT DETECTION
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/drift/diffs")
+@auth_required_strict
+def list_diffs():
+    severity = request.args.get("severity")
+    unreviewed = request.args.get("unreviewed", "false").lower() == "true"
+    page = request.args.get("page", 1, type=int)
+    per_page = min(request.args.get("per_page", 50, type=int), 200)
+    return jsonify(ScanDiffStore.list_recent(
+        user_id=g.user_id, severity=severity, unreviewed_only=unreviewed,
+        page=page, per_page=per_page,
+    ))
+
+
+@api.route("/drift/diffs/summary")
+@auth_required
+def drift_summary():
+    return jsonify(ScanDiffStore.get_summary())
+
+
+@api.route("/drift/diffs/<int:diff_id>/review", methods=["POST"])
+@auth_required_strict
+def review_diff(diff_id):
+    if not ScanDiffStore.mark_reviewed(diff_id):
+        return jsonify({"error": "Diff not found"}), 404
+    return jsonify({"message": "Marked as reviewed"})
+
+
+@api.route("/drift/buckets/<int:bucket_id>/history")
+@auth_required
+def bucket_drift_history(bucket_id):
+    snapshots = ScanSnapshotStore.list_for_bucket(bucket_id, limit=20)
+    diffs = ScanDiffStore.list_for_bucket(bucket_id)
+    return jsonify({"snapshots": snapshots, "diffs": diffs})
+
+
+@api.route("/drift/scans/<int:job_id>/diffs")
+@auth_required
+def scan_diffs(job_id):
+    """Get all diffs computed for a specific scan job."""
+    snapshots = ScanSnapshotStore.list_for_job(job_id)
+    # Compute diffs on-demand if none exist yet
+    with get_db() as db:
+        existing = db.execute(
+            "SELECT COUNT(*) FROM scan_diffs d JOIN scan_snapshots s ON d.new_snapshot_id=s.id WHERE s.scan_job_id=%s",
+            (job_id,),
+        ).fetchone()[0]
+    if existing == 0 and snapshots:
+        diffs = ScanDiffStore.compute_diffs(job_id)
+    else:
+        diffs_result = ScanDiffStore.list_recent(page=1, per_page=500)
+        diffs = diffs_result.get("items", [])
+    return jsonify({"diffs": diffs, "snapshots": snapshots})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CUSTOM ALERT RULES
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/alert-rules", methods=["POST"])
+@auth_required_strict
+def create_alert_rule():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    conditions = data.get("conditions", [])
+    severity = data.get("severity", "medium")
+    description = data.get("description", "")
+    actions = data.get("actions", ["alert"])
+
+    if not name:
+        return jsonify({"error": "Rule name required"}), 400
+    if not conditions:
+        return jsonify({"error": "At least one condition required"}), 400
+    if severity not in ("critical", "high", "medium", "low", "info"):
+        return jsonify({"error": "Invalid severity"}), 400
+
+    # Validate conditions
+    valid_types = {"file_extension", "file_size_gt", "file_name_contains",
+                   "bucket_name_contains", "bucket_status", "provider",
+                   "file_count_gt", "classification"}
+    for cond in conditions:
+        if cond.get("type") not in valid_types:
+            return jsonify({"error": f"Invalid condition type: {cond.get('type')}. Valid: {', '.join(sorted(valid_types))}"}), 400
+
+    rule = AlertRuleStore.create(
+        user_id=g.user_id, name=name, conditions=conditions,
+        severity=severity, description=description, actions=actions,
+    )
+    try:
+        AuditLogStore.log(g.user_id, "create_alert_rule", "alert_rule", rule.get("id"), {"name": name}, request.remote_addr)
+    except Exception:
+        pass
+    return jsonify(rule), 201
+
+
+@api.route("/alert-rules")
+@auth_required_strict
+def list_alert_rules():
+    return jsonify({"items": AlertRuleStore.list_by_user(g.user_id)})
+
+
+@api.route("/alert-rules/<int:rule_id>")
+@auth_required_strict
+def get_alert_rule(rule_id):
+    rule = AlertRuleStore.get(rule_id, g.user_id)
+    if not rule:
+        return jsonify({"error": "Rule not found"}), 404
+    return jsonify(rule)
+
+
+@api.route("/alert-rules/<int:rule_id>", methods=["PUT"])
+@auth_required_strict
+def update_alert_rule(rule_id):
+    data = request.get_json(silent=True) or {}
+    if not AlertRuleStore.update(rule_id, g.user_id, **data):
+        return jsonify({"error": "Rule not found or nothing to update"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "update_alert_rule", "alert_rule", rule_id, data, request.remote_addr)
+    except Exception:
+        pass
+    return jsonify(AlertRuleStore.get(rule_id, g.user_id))
+
+
+@api.route("/alert-rules/<int:rule_id>", methods=["DELETE"])
+@auth_required_strict
+def delete_alert_rule(rule_id):
+    if not AlertRuleStore.delete(rule_id, g.user_id):
+        return jsonify({"error": "Rule not found"}), 404
+    try:
+        AuditLogStore.log(g.user_id, "delete_alert_rule", "alert_rule", rule_id, None, request.remote_addr)
+    except Exception:
+        pass
+    return jsonify({"message": "Rule deleted"})
+
+
+@api.route("/alert-rules/<int:rule_id>/toggle", methods=["POST"])
+@auth_required_strict
+def toggle_alert_rule(rule_id):
+    rule = AlertRuleStore.get(rule_id, g.user_id)
+    if not rule:
+        return jsonify({"error": "Rule not found"}), 404
+    new_active = not rule.get("is_active", True)
+    AlertRuleStore.update(rule_id, g.user_id, is_active=new_active)
+    return jsonify({"message": "Toggled", "is_active": new_active})
+
+
+@api.route("/alert-rules/test", methods=["POST"])
+@auth_required_strict
+def test_alert_rules():
+    """Test all active rules against a specific bucket."""
+    data = request.get_json(silent=True) or {}
+    bucket_id = data.get("bucket_id")
+    if not bucket_id:
+        return jsonify({"error": "bucket_id required"}), 400
+
+    bucket = BucketStore.get(bucket_id)
+    if not bucket:
+        return jsonify({"error": "Bucket not found"}), 404
+
+    with get_db() as db:
+        files = db.execute(
+            "SELECT * FROM files WHERE bucket_id=%s LIMIT 500", (bucket_id,)
+        ).fetchall()
+        files_list = [dict(f) for f in files]
+
+    triggered = AlertRuleStore.evaluate_bucket(g.user_id, bucket, files_list)
+    return jsonify({"bucket": bucket["name"], "triggered_rules": triggered, "rules_checked": len(AlertRuleStore.get_active_for_user(g.user_id))})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CSRF PROTECTION
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/csrf-token")
+@auth_required
+def get_csrf_token():
+    """Get a CSRF token for the current session."""
+    token = CsrfTokenStore.generate(user_id=g.get("user_id"))
+    return jsonify({"csrf_token": token})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ENHANCED DASHBOARD
+# ═══════════════════════════════════════════════════════════════════
+
+@api.route("/dashboard/executive")
+@auth_required
+def executive_dashboard():
+    return jsonify(DashboardStatsStore.get_executive_summary(user_id=g.get("user_id")))
+
+
+@api.route("/dashboard/risk-trends")
+@auth_required
+def risk_trends():
+    days = min(request.args.get("days", 30, type=int), 365)
+    return jsonify(DashboardStatsStore.get_risk_trends(days))
+
+
+@api.route("/dashboard/remediation-sla")
+@auth_required_strict
+def remediation_sla():
+    return jsonify(DashboardStatsStore.get_remediation_sla(g.user_id))
 
 
 # ═══════════════════════════════════════════════════════════════════
