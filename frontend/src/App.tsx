@@ -286,7 +286,8 @@ export default function App() {
         </div></div>}
 
       {/* ─── NAV ─── */}
-      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}} onClick={(e)=>{if(!(e.target as HTMLElement).closest('[data-dropdown]'))setNavDropdown(null)}}>
+      {navDropdown && <div onClick={()=>setNavDropdown(null)} style={{position:'fixed',inset:0,zIndex:99}}/>}
+      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}}>
         <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
@@ -299,12 +300,12 @@ export default function App() {
           </button>
           const dropBtn=(label:string,ic:string,menuId:string,items:[string,string,string][])=>{
             const activeInGroup=items.some(([id])=>view===id)
-            return <div key={menuId} style={{position:'relative'}} data-dropdown>
-              <button onClick={(e)=>{e.stopPropagation();setNavDropdown(navDropdown===menuId?null:menuId)}}
+            return <div key={menuId} style={{position:'relative'}}>
+              <button onClick={()=>setNavDropdown(navDropdown===menuId?null:menuId)}
                 style={{background:activeInGroup?'var(--bg-tertiary)':navDropdown===menuId?'var(--bg-hover)':'transparent',border:activeInGroup?'1px solid var(--border-default)':'1px solid transparent',color:activeInGroup?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:activeInGroup?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
                 <span style={{fontSize:10}}>{ic}</span>{label}<span style={{fontSize:8,opacity:0.6,marginLeft:2}}>{navDropdown===menuId?'▲':'▼'}</span>
               </button>
-              {navDropdown===menuId && <div className="card-static" style={{position:'absolute',top:'calc(100% + 4px)',left:0,minWidth:180,padding:4,boxShadow:'var(--shadow-lg)',zIndex:200}}>
+              {navDropdown===menuId && <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,minWidth:180,padding:4,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:'var(--radius-lg)',boxShadow:'var(--shadow-lg)',zIndex:201}}>
                 {items.map(([id,l,ic2])=><button key={id} onClick={()=>navClick(id)}
                   style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:6,cursor:'pointer',color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
                   <span style={{fontSize:11,width:16,textAlign:'center'}}>{ic2}</span>{l}
