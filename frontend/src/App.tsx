@@ -290,7 +290,7 @@ export default function App() {
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden'}}>
-          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['drift','Drift','△'],['rules','Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['dashboard','Dashboard','◈'],['ai-insights','AI','✦'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
+          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['drift','Drift','△'],['rules','Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['dashboard','Dashboard','◈'],['ai-insights','AI','✦'],['api-docs','API','{ }'],['pricing','Pricing','◇']]).map(([id,l,ic])=>(
             <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else setView(id as string)}}
               style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
               <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
@@ -1476,6 +1476,108 @@ export default function App() {
             </div>}
           </div>})}
         </div>})()}
+
+      {/* ─── PRICING ─── */}
+      {view==='pricing' && (()=>{
+        const userTier = user?.tier || 'free'
+        const plans = [
+          { id:'free', name:'Free', price:'$0', period:'/forever', color:'var(--text-secondary)', desc:'Get started with cloud storage discovery', features:[
+            ['API requests','100/day'],['Scans','3/day'],['Scan schedules','1'],['Keywords per scan','10'],['Providers','All 5'],['Search results','50/page'],['File preview','Basic'],['AI insights','—'],['Webhooks','—'],['Compliance','—'],['Organizations','—'],['Priority support','—'],
+          ], limits:{scans:3,schedules:1,keywords:10,api:100} },
+          { id:'premium', name:'Pro', price:'$29', period:'/month', color:'var(--accent)', desc:'For security professionals and small teams', popular:true, features:[
+            ['API requests','5,000/day'],['Scans','50/day'],['Scan schedules','10'],['Keywords per scan','100'],['Providers','All 5'],['Search results','200/page'],['File preview','Full + download'],['AI insights','Included'],['Webhooks','5'],['Compliance','Basic'],['Organizations','1 (5 seats)'],['Priority support','Email'],
+          ], limits:{scans:50,schedules:10,keywords:100,api:5000} },
+          { id:'enterprise', name:'Enterprise', price:'$149', period:'/month', color:'#a855f7', desc:'Unlimited power for large security operations', features:[
+            ['API requests','50,000/day'],['Scans','Unlimited'],['Scan schedules','Unlimited'],['Keywords per scan','Unlimited'],['Providers','All 5'],['Search results','Unlimited'],['File preview','Full + download + export'],['AI insights','Priority'],['Webhooks','Unlimited'],['Compliance','All frameworks'],['Organizations','Unlimited'],['Priority support','24/7 Slack + phone'],
+          ], limits:{scans:-1,schedules:-1,keywords:-1,api:50000} },
+        ]
+        return <div style={{padding:'80px 24px 24px',maxWidth:1100,margin:'0 auto'}}>
+          <div style={{textAlign:'center',marginBottom:48}}>
+            <h2 style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',marginBottom:8,letterSpacing:'-0.03em'}}>Simple, Transparent Pricing</h2>
+            <p style={{fontSize:14,color:'var(--text-secondary)',maxWidth:500,margin:'0 auto'}}>Choose the plan that fits your cloud security needs. Upgrade or downgrade anytime.</p>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:20,marginBottom:48}}>
+            {plans.map(plan=>{const isCurrent=userTier===plan.id;return <div key={plan.id} style={{background:'var(--bg-secondary)',border:plan.popular?`2px solid ${plan.color}`:'1px solid var(--border-default)',borderRadius:16,padding:0,position:'relative',overflow:'hidden',transition:'transform 0.2s,box-shadow 0.2s',boxShadow:plan.popular?`0 0 40px ${plan.color}15`:'var(--shadow-sm)'}}>
+              {plan.popular && <div style={{background:`linear-gradient(135deg,${plan.color},#00c568)`,color:'#000',textAlign:'center',padding:'4px 0',fontSize:10,fontWeight:800,letterSpacing:'1px',textTransform:'uppercase' as const}}>MOST POPULAR</div>}
+              <div style={{padding:'28px 24px 24px'}}>
+                <div style={{fontSize:13,fontWeight:700,color:plan.color,textTransform:'uppercase' as const,letterSpacing:'0.5px',marginBottom:4}}>{plan.name}</div>
+                <div style={{display:'flex',alignItems:'baseline',gap:4,marginBottom:8}}>
+                  <span style={{fontSize:40,fontWeight:800,fontFamily:'var(--font-display)',letterSpacing:'-0.03em',color:'var(--text-primary)'}}>{plan.price}</span>
+                  <span style={{fontSize:13,color:'var(--text-muted)'}}>{plan.period}</span>
+                </div>
+                <p style={{fontSize:12,color:'var(--text-secondary)',marginBottom:20,lineHeight:1.5}}>{plan.desc}</p>
+                {isCurrent ? <div style={{background:plan.color+'18',border:`1px solid ${plan.color}40`,color:plan.color,textAlign:'center',padding:'10px 0',borderRadius:10,fontSize:13,fontWeight:700}}>Current Plan</div>
+                : <button onClick={async()=>{if(!user){setAuthMode('login');setAuthError('');setView('auth');return};const r=await apiFetch('/auth/upgrade',{method:'POST',body:JSON.stringify({tier:plan.id})});if(r?.user){setUser(r.user);toast(`Upgraded to ${plan.name}!`,'success')}else{toast(r?.error||'Upgrade failed','error')}}} className="btn-primary" style={{width:'100%',padding:'10px 0',fontSize:13,borderRadius:10}}>
+                  {!user?'Sign Up':userTier==='enterprise'?`Switch to ${plan.name}`:`Upgrade to ${plan.name}`}
+                </button>}
+                <div style={{marginTop:20,borderTop:'1px solid var(--border-subtle)',paddingTop:16}}>
+                  {plan.features.map(([label,value]:string[],i:number)=><div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:i<plan.features.length-1?'1px solid var(--border-subtle)':'none'}}>
+                    <span style={{fontSize:12,color:'var(--text-secondary)'}}>{label}</span>
+                    <span style={{fontSize:12,fontWeight:600,color:value==='—'?'var(--text-muted)':plan.color,fontFamily:value.match(/[0-9]/)?'var(--font-mono)':'inherit'}}>{value}</span>
+                  </div>)}
+                </div>
+              </div>
+            </div>})}
+          </div>
+
+          {/* Rate Limits Table */}
+          <div className="card-static" style={{padding:28}}>
+            <h3 style={{fontSize:17,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:4}}>Rate Limits &amp; Quotas</h3>
+            <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:20}}>All limits reset daily at midnight UTC. Exceeding your limit returns HTTP 429.</p>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                <thead><tr style={{borderBottom:'2px solid var(--border-default)'}}>
+                  <th style={{textAlign:'left',padding:'10px 12px',color:'var(--text-muted)',fontSize:11,textTransform:'uppercase' as const,letterSpacing:'0.5px'}}>Resource</th>
+                  <th style={{textAlign:'center',padding:'10px 12px',color:'var(--text-secondary)',fontSize:11}}>Free</th>
+                  <th style={{textAlign:'center',padding:'10px 12px',color:'var(--accent)',fontSize:11}}>Pro</th>
+                  <th style={{textAlign:'center',padding:'10px 12px',color:'#a855f7',fontSize:11}}>Enterprise</th>
+                </tr></thead>
+                <tbody>
+                  {[
+                    ['API Requests (per day)','100','5,000','50,000'],
+                    ['Discovery Scans (per day)','3','50','Unlimited'],
+                    ['Scan Schedules','1','10','Unlimited'],
+                    ['Keywords per Scan','10','100','Unlimited'],
+                    ['Max Concurrent Scans','1','3','10'],
+                    ['Search Results per Page','50','200','Unlimited'],
+                    ['File Preview','Basic','Full + Download','Full + Export'],
+                    ['AI-Powered Insights','—','Included','Priority Queue'],
+                    ['Webhook Integrations','—','5','Unlimited'],
+                    ['Compliance Frameworks','—','Basic (SOC2)','All (SOC2, HIPAA, PCI, GDPR)'],
+                    ['Organization & Team','—','1 org / 5 seats','Unlimited orgs & seats'],
+                    ['Data Retention','30 days','1 year','Unlimited'],
+                    ['Scan History','7 days','90 days','Unlimited'],
+                    ['Export Formats','CSV','CSV, JSON','CSV, JSON, PDF, SARIF'],
+                    ['Support','Community','Email','24/7 Slack + Phone'],
+                  ].map(([resource,...vals],i)=><tr key={i} style={{borderBottom:'1px solid var(--border-subtle)',background:i%2===0?'var(--bg-primary)':'transparent'}}>
+                    <td style={{padding:'10px 12px',fontWeight:500}}>{resource}</td>
+                    {vals.map((v,j)=><td key={j} style={{textAlign:'center',padding:'10px 12px',color:v==='—'?'var(--text-muted)':j===0?'var(--text-secondary)':j===1?'var(--accent)':'#a855f7',fontWeight:v==='Unlimited'||v==='Priority Queue'?700:400,fontFamily:v.match(/^[0-9,]+$/)?'var(--font-mono)':'inherit'}}>{v}</td>)}
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* FAQ */}
+          <div style={{marginTop:40,marginBottom:40}}>
+            <h3 style={{fontSize:17,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:20,textAlign:'center'}}>Frequently Asked Questions</h3>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+              {[
+                ['How do rate limits work?','Each tier has a daily API request quota that resets at midnight UTC. Rate-limited requests receive HTTP 429 with a Retry-After header.'],
+                ['Can I upgrade mid-cycle?','Yes! Upgrades take effect immediately. You only pay the prorated difference for the remainder of your billing period.'],
+                ['What happens when I hit my scan limit?','You will receive a clear error message. Scheduled scans that exceed your limit are queued and run when your quota resets.'],
+                ['Is there a free trial for Pro?','New accounts get a 14-day Pro trial with full access. No credit card required.'],
+                ['Can I downgrade my plan?','Yes, you can downgrade at any time. The change takes effect at your next billing cycle. Your data is retained.'],
+                ['Do you offer annual billing?','Yes! Annual plans save 20%. Contact us at billing@cloudscan.io for annual pricing.'],
+              ].map(([q,a],i)=><div key={i} className="card-static" style={{padding:20}}>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)',marginBottom:8}}>{q}</div>
+                <div style={{fontSize:12,color:'var(--text-secondary)',lineHeight:1.6}}>{a}</div>
+              </div>)}
+            </div>
+          </div>
+        </div>
+      })()}
 
       {/* ─── TOAST NOTIFICATIONS ─── */}
       {toasts.length>0 && <div style={{position:'fixed',bottom:20,right:20,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>

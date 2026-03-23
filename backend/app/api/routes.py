@@ -418,6 +418,85 @@ def update_user_settings():
 
 
 # ═══════════════════════════════════════════════════════════════════
+# PRICING / TIER MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════
+
+TIER_LIMITS = {
+    "free":       {"api_requests_day": 100,   "scans_day": 3,  "schedules": 1,  "keywords_per_scan": 10,
+                   "concurrent_scans": 1,  "webhooks": 0,  "ai_enabled": False, "export_formats": ["csv"]},
+    "premium":    {"api_requests_day": 5000,  "scans_day": 50, "schedules": 10, "keywords_per_scan": 100,
+                   "concurrent_scans": 3,  "webhooks": 5,  "ai_enabled": True,  "export_formats": ["csv", "json"]},
+    "enterprise": {"api_requests_day": 50000, "scans_day": -1, "schedules": -1, "keywords_per_scan": -1,
+                   "concurrent_scans": 10, "webhooks": -1, "ai_enabled": True,  "export_formats": ["csv", "json", "pdf", "sarif"]},
+}
+
+
+@api.route("/pricing", methods=["GET"])
+def get_pricing():
+    """Return tier definitions and rate limits."""
+    return jsonify({
+        "tiers": {
+            "free":       {"name": "Free",       "price_monthly": 0,   "limits": TIER_LIMITS["free"]},
+            "premium":    {"name": "Pro",        "price_monthly": 29,  "limits": TIER_LIMITS["premium"]},
+            "enterprise": {"name": "Enterprise", "price_monthly": 149, "limits": TIER_LIMITS["enterprise"]},
+        }
+    })
+
+
+@api.route("/auth/upgrade", methods=["POST"])
+@auth_required_strict
+def upgrade_tier():
+    """Change the authenticated user's tier."""
+    data = request.get_json(force=True)
+    new_tier = data.get("tier", "").lower()
+    if new_tier not in ("free", "premium", "enterprise"):
+        return jsonify({"error": "Invalid tier. Must be free, premium, or enterprise."}), 400
+
+    with get_db() as db:
+        db.execute("UPDATE users SET tier=%s WHERE id=%s", (new_tier, g.user_id))
+        user = db.execute(
+            "SELECT id, email, username, tier, api_key, created_at, last_login, queries_today FROM users WHERE id=%s",
+            (g.user_id,),
+        ).fetchone()
+
+    new_token = create_token(user["id"], user["email"], user["tier"])
+    try:
+        AuditLogStore.log(g.user_id, "upgrade_tier", "user", g.user_id,
+                          {"new_tier": new_tier}, request.remote_addr)
+    except Exception:
+        logger.debug("Audit log failed", exc_info=True)
+    return jsonify({"message": f"Upgraded to {new_tier}", "user": dict(user), "token": new_token})
+
+
+@api.route("/auth/tier-limits", methods=["GET"])
+@auth_required
+def get_tier_limits():
+    """Return the current user's tier limits and usage."""
+    tier = g.user_tier or "free"
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+
+    usage = {}
+    if g.user_id:
+        with get_db() as db:
+            user = db.execute("SELECT queries_today FROM users WHERE id=%s", (g.user_id,)).fetchone()
+            usage["api_requests_today"] = user["queries_today"] if user else 0
+            # Count today's scans
+            today_scans = db.execute(
+                "SELECT COUNT(*) as cnt FROM scan_jobs WHERE created_by=%s AND created_at >= %s",
+                (g.user_id, datetime.utcnow().strftime("%Y-%m-%d")),
+            ).fetchone()
+            usage["scans_today"] = today_scans["cnt"] if today_scans else 0
+            # Count schedules
+            sched_count = db.execute(
+                "SELECT COUNT(*) as cnt FROM scan_schedules WHERE user_id=%s",
+                (g.user_id,),
+            ).fetchone()
+            usage["schedules"] = sched_count["cnt"] if sched_count else 0
+
+    return jsonify({"tier": tier, "limits": limits, "usage": usage})
+
+
+# ═══════════════════════════════════════════════════════════════════
 # ACTIVITY LOG
 # ═══════════════════════════════════════════════════════════════════
 
@@ -742,6 +821,32 @@ def create_scan():
 
     if not keywords and not companies:
         return jsonify({"error": "At least keywords or companies required"}), 400
+
+    # ── Tier-based enforcement ──
+    tier = g.get("user_tier", "free")
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+
+    kw_limit = limits["keywords_per_scan"]
+    if kw_limit > 0 and len(keywords) > kw_limit:
+        return jsonify({"error": f"Your {tier} plan allows max {kw_limit} keywords per scan. Upgrade for more.", "tier": tier}), 403
+
+    if g.get("user_id") and limits["scans_day"] > 0:
+        with get_db() as db:
+            today_scans = db.execute(
+                "SELECT COUNT(*) as cnt FROM scan_jobs WHERE created_by=%s AND created_at >= %s",
+                (g.user_id, datetime.utcnow().strftime("%Y-%m-%d")),
+            ).fetchone()
+            if today_scans and today_scans["cnt"] >= limits["scans_day"]:
+                return jsonify({"error": f"Daily scan limit ({limits['scans_day']}) reached for {tier} plan. Upgrade for more scans.", "tier": tier}), 429
+
+    concurrent_limit = limits["concurrent_scans"]
+    active = scan_service.get_active_scans()
+    if g.get("user_id"):
+        active_user = [j for j in active]  # all active scans count
+    else:
+        active_user = active
+    if concurrent_limit > 0 and len(active_user) >= concurrent_limit:
+        return jsonify({"error": f"Max {concurrent_limit} concurrent scans for {tier} plan.", "tier": tier}), 429
 
     # start_discovery is SYNC — spawns a background thread internally
     job = scan_service.start_discovery(
@@ -1990,6 +2095,16 @@ def create_scan_schedule():
     frequency = data.get("frequency", "daily")
     if frequency not in ("hourly", "daily", "weekly", "monthly"):
         return jsonify({"error": "Invalid frequency"}), 400
+
+    # ── Tier-based schedule limit ──
+    tier = g.get("user_tier", "free")
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+    sched_limit = limits["schedules"]
+    if sched_limit > 0:
+        existing = ScanScheduleStore.list_by_user(g.user_id)
+        if len(existing) >= sched_limit:
+            return jsonify({"error": f"Schedule limit ({sched_limit}) reached for {tier} plan. Upgrade for more.", "tier": tier}), 403
+
     schedule = ScanScheduleStore.create(
         user_id=g.user_id,
         name=name,
