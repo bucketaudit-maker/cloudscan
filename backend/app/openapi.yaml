@@ -1,0 +1,2021 @@
+openapi: 3.0.3
+info:
+  title: CloudScan API
+  description: |
+    Security research platform for discovering and analyzing publicly accessible cloud storage buckets
+    across AWS S3, Azure Blob, GCP Storage, DigitalOcean Spaces, and Alibaba OSS.
+
+    ## Authentication
+    All authenticated endpoints accept one of:
+    - **Bearer Token**: `Authorization: Bearer <jwt_token>` — obtained via `/auth/login`
+    - **API Key Header**: `X-API-Key: <api_key>` — found in user profile
+    - **API Key Query**: `?access_token=<api_key>`
+
+    Endpoints marked `auth_required` allow anonymous access with reduced rate limits.
+    Endpoints marked `auth_required_strict` return 401 if no credentials are provided.
+
+    ## Rate Limits
+    | Tier | Daily Limit |
+    |------|------------|
+    | Free | 100 |
+    | Premium | 5,000 |
+    | Enterprise | 50,000 |
+
+    Rate-limited responses return `429` with `limit`, `tier`, and `reset_at` fields.
+
+    ## Pagination
+    List endpoints support `page` and `per_page` (max 200) query parameters.
+    Responses include `items`, `total`, `page`, and `per_page` fields.
+  version: 1.0.0
+  contact:
+    name: CloudScan
+  license:
+    name: MIT
+
+servers:
+  - url: /api/v1
+    description: API v1
+
+tags:
+  - name: Health
+    description: System health and status
+  - name: Auth
+    description: Authentication, registration, password reset, 2FA
+  - name: Files
+    description: File search, export, and preview
+  - name: Buckets
+    description: Cloud storage bucket listing and details
+  - name: Scans
+    description: Discovery scans and scheduling
+  - name: Statistics
+    description: Analytics, dashboard, and trends
+  - name: Monitoring
+    description: Watchlists, alerts, and webhooks
+  - name: AI
+    description: AI-powered classification, risk scoring, and search
+  - name: Organizations
+    description: Multi-tenant organization management
+  - name: Notifications
+    description: In-app notifications and preferences
+  - name: Compliance
+    description: Compliance frameworks and checks
+  - name: Remediations
+    description: Remediation tracking and SLA
+  - name: Reports
+    description: Report generation and scheduling
+  - name: Integrations
+    description: Third-party integrations (Slack, Jira)
+  - name: Tags
+    description: Bucket tagging and bookmarks
+  - name: Drift
+    description: Scan diff and drift detection
+  - name: Alert Rules
+    description: Custom alert rule engine
+  - name: Activity
+    description: Audit log and activity tracking
+
+paths:
+  # ═══════════════════════════════════════════
+  # HEALTH
+  # ═══════════════════════════════════════════
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string, example: "1.0.0" }
+
+  /csrf-token:
+    get:
+      tags: [Health]
+      summary: Get CSRF token
+      operationId: getCsrfToken
+      security: [BearerAuth: []]
+      responses:
+        '200':
+          description: CSRF token for form submissions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrf_token: { type: string }
+                  expires_at: { type: string, format: date-time }
+
+  # ═══════════════════════════════════════════
+  # AUTH
+  # ═══════════════════════════════════════════
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new account
+      operationId: register
+      description: Creates a new user account and returns a JWT token. Rate limited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, username, password]
+              properties:
+                email: { type: string, format: email, example: user@example.com }
+                username: { type: string, minLength: 2, example: johndoe }
+                password: { type: string, minLength: 6, example: securePass123 }
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      operationId: login
+      description: |
+        Authenticate with email and password. If 2FA is enabled, returns `requires_2fa: true`
+        with a `temp_token` — use `/auth/2fa/verify` to complete login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login successful (or 2FA required)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      token: { type: string }
+                      user: { $ref: '#/components/schemas/User' }
+                  - type: object
+                    properties:
+                      requires_2fa: { type: boolean, example: true }
+                      temp_token: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      operationId: getMe
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: User profile with API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Reset token generated (in dev mode, returned directly)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  token: { type: string, description: Only returned in development mode }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 6 }
+      responses:
+        '200':
+          description: Password reset successful, returns new JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+
+  /auth/rotate-key:
+    post:
+      tags: [Auth]
+      summary: Rotate API key
+      operationId: rotateApiKey
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: New API key generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key: { type: string, example: cs_a1b2c3d4e5f6... }
+
+  /auth/settings:
+    put:
+      tags: [Auth]
+      summary: Update user settings
+      operationId: updateSettings
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                password: { type: string, minLength: 6 }
+      responses:
+        '200':
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+
+  /auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Initialize 2FA setup
+      operationId: setup2fa
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Returns a TOTP secret for the user to add to their authenticator app.
+      responses:
+        '200':
+          description: TOTP secret and provisioning URI
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string, example: JBSWY3DPEHPK3PXP }
+                  uri: { type: string, example: "otpauth://totp/CloudScan:user@example.com?secret=..." }
+
+  /auth/2fa/confirm:
+    post:
+      tags: [Auth]
+      summary: Confirm 2FA setup with code
+      operationId: confirm2fa
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Verifies the TOTP code and enables 2FA. Returns backup codes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: "123456" }
+      responses:
+        '200':
+          description: 2FA enabled with backup codes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  backup_codes: { type: array, items: { type: string }, example: ["abc12345", "def67890"] }
+
+  /auth/2fa/verify:
+    post:
+      tags: [Auth]
+      summary: Verify 2FA code during login
+      operationId: verify2fa
+      description: Completes login when 2FA is enabled. Requires the temp_token from the login response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [temp_token, code]
+              properties:
+                temp_token: { type: string }
+                code: { type: string, example: "123456" }
+      responses:
+        '200':
+          description: Login complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/2fa/disable:
+    post:
+      tags: [Auth]
+      summary: Disable 2FA
+      operationId: disable2fa
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        '200':
+          description: 2FA disabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+
+  /auth/2fa/status:
+    get:
+      tags: [Auth]
+      summary: Get 2FA status
+      operationId: get2faStatus
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: 2FA status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  backup_codes_remaining: { type: integer }
+
+  # ═══════════════════════════════════════════
+  # FILES
+  # ═══════════════════════════════════════════
+  /files:
+    get:
+      tags: [Files]
+      summary: Search files
+      operationId: searchFiles
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: |
+        Full-text search across indexed files. Supports exact match, wildcard patterns,
+        regex, and advanced filters. Rate limited per tier.
+      parameters:
+        - name: q
+          in: query
+          description: Search query (filename, path). Supports wildcards.
+          schema: { type: string, example: "*.env" }
+        - name: regex
+          in: query
+          description: Regex pattern to match against file paths
+          schema: { type: string, example: ".*\\.sql$" }
+        - name: ext
+          in: query
+          description: File extension filter
+          schema: { type: string, example: csv }
+        - name: exclude_ext
+          in: query
+          description: Exclude file extension
+          schema: { type: string, example: jpg }
+        - name: provider
+          in: query
+          description: Cloud provider filter
+          schema: { type: string, enum: [aws, azure, gcp, digitalocean, alibaba] }
+        - name: bucket
+          in: query
+          description: Filter by bucket name
+          schema: { type: string }
+        - name: sort
+          in: query
+          description: Sort order
+          schema: { type: string, enum: [relevance, newest, oldest, largest, smallest], default: relevance }
+        - name: min_size
+          in: query
+          description: Minimum file size in bytes
+          schema: { type: integer }
+        - name: max_size
+          in: query
+          description: Maximum file size in bytes
+          schema: { type: integer }
+        - name: date_from
+          in: query
+          description: Files modified after this date
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          description: Files modified before this date
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/File' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  per_page: { type: integer }
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /files/export:
+    get:
+      tags: [Files]
+      summary: Export search results
+      operationId: exportFiles
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Export search results as CSV or JSON. Same query parameters as `/files`.
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema: { type: string, enum: [csv, json], default: csv }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: ext
+          in: query
+          schema: { type: string }
+        - name: provider
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Exported file
+          content:
+            text/csv:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/File' }
+
+  /files/random:
+    get:
+      tags: [Files]
+      summary: Get random file sample
+      operationId: randomFiles
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: count
+          in: query
+          schema: { type: integer, default: 10, maximum: 100 }
+      responses:
+        '200':
+          description: Random files
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/File' }
+
+  /files/{file_id}/preview:
+    get:
+      tags: [Files]
+      summary: Preview file content
+      operationId: previewFile
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Returns the first 4KB of text-based files. Only works for text content types.
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: File preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content: { type: string }
+                  content_type: { type: string }
+                  truncated: { type: boolean }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ═══════════════════════════════════════════
+  # SAVED SEARCHES
+  # ═══════════════════════════════════════════
+  /searches/saved:
+    post:
+      tags: [Files]
+      summary: Save a search
+      operationId: saveSearch
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, query_params]
+              properties:
+                name: { type: string, example: "My backup search" }
+                query_params: { type: object, description: "Search parameters to save" }
+      responses:
+        '201':
+          description: Search saved
+    get:
+      tags: [Files]
+      summary: List saved searches
+      operationId: listSavedSearches
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Saved searches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /searches/saved/{search_id}:
+    delete:
+      tags: [Files]
+      summary: Delete saved search
+      operationId: deleteSavedSearch
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: search_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Deleted
+
+  # ═══════════════════════════════════════════
+  # BUCKETS
+  # ═══════════════════════════════════════════
+  /buckets:
+    get:
+      tags: [Buckets]
+      summary: List buckets
+      operationId: listBuckets
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: provider
+          in: query
+          schema: { type: string, enum: [aws, azure, gcp, digitalocean, alibaba] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, closed, partial] }
+        - name: search
+          in: query
+          description: Search bucket names
+          schema: { type: string }
+        - name: tag_id
+          in: query
+          schema: { type: integer }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        '200':
+          description: Bucket list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Bucket' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  per_page: { type: integer }
+
+  /buckets/{bucket_id}:
+    get:
+      tags: [Buckets]
+      summary: Get bucket details
+      operationId: getBucket
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: bucket_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 100 }
+      responses:
+        '200':
+          description: Bucket with files
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Bucket'
+                  - type: object
+                    properties:
+                      files:
+                        type: array
+                        items: { $ref: '#/components/schemas/File' }
+                      files_total: { type: integer }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ═══════════════════════════════════════════
+  # STATISTICS & DASHBOARD
+  # ═══════════════════════════════════════════
+  /stats:
+    get:
+      tags: [Statistics]
+      summary: Public statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_buckets: { type: integer }
+                  total_files: { type: integer }
+                  total_size_bytes: { type: integer }
+                  providers: { type: array, items: { type: object } }
+                  top_extensions: { type: array, items: { type: object } }
+
+  /stats/timeline:
+    get:
+      tags: [Statistics]
+      summary: Discovery timeline
+      operationId: getTimeline
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30, maximum: 365 }
+      responses:
+        '200':
+          description: Timeline data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files_timeline: { type: array, items: { type: object } }
+                  buckets_timeline: { type: array, items: { type: object } }
+                  days: { type: integer }
+
+  /stats/breakdown:
+    get:
+      tags: [Statistics]
+      summary: File type & status breakdown
+      operationId: getBreakdown
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Breakdown data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk_distribution: { type: array, items: { type: object } }
+                  status_distribution: { type: array, items: { type: object } }
+                  classification_distribution: { type: array, items: { type: object } }
+
+  /dashboard/executive:
+    get:
+      tags: [Statistics]
+      summary: Executive dashboard
+      operationId: getExecutiveDashboard
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Executive summary with KPIs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_buckets: { type: integer }
+                  open_buckets: { type: integer }
+                  exposure_rate: { type: number }
+                  total_files: { type: integer }
+                  risk_distribution: { type: object }
+                  sensitive_files: { type: object }
+                  recent_scans: { type: object }
+                  unresolved_alerts: { type: object }
+                  top_exposed_buckets: { type: array, items: { $ref: '#/components/schemas/Bucket' } }
+                  drift_summary: { type: object }
+
+  /dashboard/risk-trends:
+    get:
+      tags: [Statistics]
+      summary: Risk trends over time
+      operationId: getRiskTrends
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30, maximum: 365 }
+      responses:
+        '200':
+          description: Risk trend data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk_trends: { type: array, items: { type: object } }
+                  days: { type: integer }
+
+  /dashboard/remediation-sla:
+    get:
+      tags: [Statistics]
+      summary: Remediation SLA metrics
+      operationId: getRemediationSla
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: SLA metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time_to_close: { type: object }
+                  overdue_by_priority: { type: object }
+                  open_aging: { type: object, properties: { this_week: { type: integer }, this_month: { type: integer }, older: { type: integer } } }
+
+  # ═══════════════════════════════════════════
+  # SCANS
+  # ═══════════════════════════════════════════
+  /scans:
+    post:
+      tags: [Scans]
+      summary: Start discovery scan
+      operationId: startScan
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: |
+        Starts an asynchronous scan to discover cloud storage buckets. Returns 202.
+        Monitor progress via SSE at `/events/scans` or by polling `GET /scans/{job_id}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywords: { type: array, items: { type: string }, example: ["backup", "staging"] }
+                companies: { type: array, items: { type: string }, example: ["acme"] }
+                providers: { type: array, items: { type: string, enum: [aws, azure, gcp, digitalocean, alibaba] } }
+                max_names: { type: integer, default: 1000, maximum: 50000 }
+                regions_per_provider: { type: integer, default: 3 }
+      responses:
+        '202':
+          description: Scan started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanJob'
+    get:
+      tags: [Scans]
+      summary: List recent scans
+      operationId: listScans
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Returns the 50 most recent scan jobs.
+      responses:
+        '200':
+          description: Recent scans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ScanJob' }
+
+  /scans/{job_id}:
+    get:
+      tags: [Scans]
+      summary: Get scan status
+      operationId: getScan
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Scan job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /scans/{job_id}/cancel:
+    post:
+      tags: [Scans]
+      summary: Cancel running scan
+      operationId: cancelScan
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Scan cancelled
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /scans/schedules:
+    post:
+      tags: [Scans]
+      summary: Create scan schedule
+      operationId: createSchedule
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, keywords]
+              properties:
+                name: { type: string }
+                keywords: { type: string, description: Comma-separated keywords }
+                companies: { type: string }
+                frequency: { type: string, enum: [hourly, daily, weekly, monthly], default: daily }
+      responses:
+        '201':
+          description: Schedule created
+    get:
+      tags: [Scans]
+      summary: List scan schedules
+      operationId: listSchedules
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Scan schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /scans/schedules/{sid}/toggle:
+    post:
+      tags: [Scans]
+      summary: Toggle schedule active/inactive
+      operationId: toggleSchedule
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: sid
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Toggled
+
+  /scans/schedules/{sid}/run:
+    post:
+      tags: [Scans]
+      summary: Manually trigger scheduled scan
+      operationId: runSchedule
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: sid
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '202':
+          description: Scan started
+
+  /events/scans:
+    get:
+      tags: [Scans]
+      summary: Real-time scan events (SSE)
+      operationId: scanEvents
+      description: |
+        Server-Sent Events stream. Events: `connected`, `progress`, `bucket_found`,
+        `scan_started`, `scan_complete`, `scan_cancelled`, `drift_detected`, `error`.
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  # ═══════════════════════════════════════════
+  # MONITORING
+  # ═══════════════════════════════════════════
+  /monitor/watchlists:
+    post:
+      tags: [Monitoring]
+      summary: Create watchlist
+      operationId: createWatchlist
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, keywords]
+              properties:
+                name: { type: string }
+                keywords: { type: array, items: { type: string } }
+                companies: { type: array, items: { type: string } }
+                providers: { type: array, items: { type: string } }
+                scan_interval_hours: { type: integer, default: 24 }
+      responses:
+        '201':
+          description: Watchlist created
+    get:
+      tags: [Monitoring]
+      summary: List watchlists
+      operationId: listWatchlists
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: User watchlists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /monitor/watchlists/{wl_id}/scan:
+    post:
+      tags: [Monitoring]
+      summary: Trigger watchlist scan
+      operationId: triggerWatchlistScan
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: wl_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '202':
+          description: Scan triggered
+
+  /monitor/alerts:
+    get:
+      tags: [Monitoring]
+      summary: List alerts
+      operationId: listAlerts
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: unread
+          in: query
+          schema: { type: boolean }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [critical, high, medium, low, info] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Alerts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Alert' } }
+                  total: { type: integer }
+                  unread_count: { type: integer }
+
+  /monitor/alerts/bulk-resolve:
+    post:
+      tags: [Monitoring]
+      summary: Bulk resolve alerts
+      operationId: bulkResolveAlerts
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alert_ids]
+              properties:
+                alert_ids: { type: array, items: { type: integer } }
+      responses:
+        '200':
+          description: Alerts resolved
+
+  /monitor/webhooks:
+    post:
+      tags: [Monitoring]
+      summary: Create webhook
+      operationId: createWebhook
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url]
+              properties:
+                name: { type: string }
+                url: { type: string, format: uri }
+                secret: { type: string, description: Optional HMAC signing secret }
+                event_types: { type: array, items: { type: string }, default: ["critical", "high"] }
+      responses:
+        '201':
+          description: Webhook created
+    get:
+      tags: [Monitoring]
+      summary: List webhooks
+      operationId: listWebhooks
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: User webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /monitor/dashboard:
+    get:
+      tags: [Monitoring]
+      summary: Monitoring dashboard
+      operationId: getMonitorDashboard
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_watchlists: { type: integer }
+                  total_alerts: { type: integer }
+                  unread_alerts: { type: integer }
+                  active_scans: { type: integer }
+
+  # ═══════════════════════════════════════════
+  # AI
+  # ═══════════════════════════════════════════
+  /ai/status:
+    get:
+      tags: [AI]
+      summary: AI availability status
+      operationId: aiStatus
+      responses:
+        '200':
+          description: AI provider status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  active_provider: { type: string }
+                  providers: { type: array, items: { type: object } }
+
+  /ai/search:
+    post:
+      tags: [AI]
+      summary: Natural language search
+      operationId: aiSearch
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Interprets a natural language query into structured search parameters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string, example: "find database backups from tech companies" }
+      responses:
+        '200':
+          description: Parsed search with results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interpretation: { type: string }
+                  search_params: { type: object }
+                  results: { type: object }
+
+  /ai/classify/{bucket_id}:
+    post:
+      tags: [AI]
+      summary: Classify bucket files with AI
+      operationId: classifyBucket
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: bucket_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Classification results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  classified: { type: integer }
+                  classifications: { type: array, items: { type: object } }
+
+  /ai/risk/{bucket_id}:
+    post:
+      tags: [AI]
+      summary: Calculate bucket risk score
+      operationId: riskScore
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: bucket_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Risk assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk_score: { type: integer, minimum: 0, maximum: 100 }
+                  risk_level: { type: string, enum: [critical, high, medium, low, info] }
+                  factors: { type: array, items: { type: string } }
+
+  /ai/report:
+    post:
+      tags: [AI]
+      summary: Generate AI security report
+      operationId: aiReport
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Generated report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report: { type: string }
+                  generated_at: { type: string, format: date-time }
+
+  # ═══════════════════════════════════════════
+  # DRIFT DETECTION
+  # ═══════════════════════════════════════════
+  /drift/diffs:
+    get:
+      tags: [Drift]
+      summary: List scan diffs
+      operationId: listDriftDiffs
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: severity
+          in: query
+          schema: { type: string, enum: [critical, high, medium, low, info] }
+        - name: unreviewed
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Drift diffs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ScanDiff' } }
+                  total: { type: integer }
+
+  /drift/diffs/summary:
+    get:
+      tags: [Drift]
+      summary: Drift summary
+      operationId: getDriftSummary
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Summary of all drift changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  unreviewed: { type: integer }
+                  by_severity: { type: object }
+                  by_type: { type: object }
+
+  /drift/diffs/{diff_id}/review:
+    post:
+      tags: [Drift]
+      summary: Mark diff as reviewed
+      operationId: reviewDiff
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: diff_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Marked as reviewed
+
+  # ═══════════════════════════════════════════
+  # ALERT RULES
+  # ═══════════════════════════════════════════
+  /alert-rules:
+    post:
+      tags: [Alert Rules]
+      summary: Create alert rule
+      operationId: createAlertRule
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: |
+        Create a custom alert rule with conditions. Conditions are AND-combined.
+        Supported condition types: `file_extension`, `file_size_gt`, `file_name_contains`,
+        `bucket_name_contains`, `bucket_status`, `provider`, `file_count_gt`, `classification`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, conditions]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                severity: { type: string, enum: [critical, high, medium, low, info], default: medium }
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: { type: string, example: file_extension }
+                      value: { type: string, example: env }
+                actions: { type: array, items: { type: string }, default: ["alert"] }
+      responses:
+        '201':
+          description: Rule created
+    get:
+      tags: [Alert Rules]
+      summary: List alert rules
+      operationId: listAlertRules
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: User alert rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /alert-rules/{rule_id}/toggle:
+    post:
+      tags: [Alert Rules]
+      summary: Toggle rule active/inactive
+      operationId: toggleAlertRule
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Toggled
+
+  /alert-rules/test:
+    post:
+      tags: [Alert Rules]
+      summary: Test rules against a bucket
+      operationId: testAlertRules
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bucket_id]
+              properties:
+                bucket_id: { type: integer }
+      responses:
+        '200':
+          description: Test results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matches: { type: array, items: { type: object } }
+
+  # ═══════════════════════════════════════════
+  # COMPLIANCE
+  # ═══════════════════════════════════════════
+  /compliance/frameworks:
+    get:
+      tags: [Compliance]
+      summary: List compliance frameworks
+      operationId: listFrameworks
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Returns available frameworks (PCI-DSS, HIPAA, SOC2, GDPR, ISO27001, NIST).
+      responses:
+        '200':
+          description: Compliance frameworks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /compliance/check/{framework_id}:
+    post:
+      tags: [Compliance]
+      summary: Run compliance check
+      operationId: runComplianceCheck
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Compliance check results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  framework: { type: string }
+                  total_controls: { type: integer }
+                  passed: { type: integer }
+                  failed: { type: integer }
+                  results: { type: array, items: { type: object } }
+
+  # ═══════════════════════════════════════════
+  # REMEDIATIONS
+  # ═══════════════════════════════════════════
+  /remediations:
+    post:
+      tags: [Remediations]
+      summary: Create remediation task
+      operationId: createRemediation
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bucket_id, title]
+              properties:
+                bucket_id: { type: integer }
+                title: { type: string }
+                description: { type: string }
+                alert_id: { type: integer }
+                assigned_to: { type: integer }
+                priority: { type: string, enum: [critical, high, medium, low], default: medium }
+                due_date: { type: string, format: date }
+      responses:
+        '201':
+          description: Remediation created
+    get:
+      tags: [Remediations]
+      summary: List remediations
+      operationId: listRemediations
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, in_progress, verified, closed] }
+        - name: assigned_to
+          in: query
+          schema: { type: integer }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Remediations list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+                  total: { type: integer }
+
+  /remediations/{rid}/status:
+    put:
+      tags: [Remediations]
+      summary: Update remediation status
+      operationId: updateRemediationStatus
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: rid
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [open, in_progress, verified, closed] }
+      responses:
+        '200':
+          description: Status updated
+
+  # ═══════════════════════════════════════════
+  # ORGANIZATIONS
+  # ═══════════════════════════════════════════
+  /orgs:
+    post:
+      tags: [Organizations]
+      summary: Create organization
+      operationId: createOrg
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+      responses:
+        '201':
+          description: Organization created
+    get:
+      tags: [Organizations]
+      summary: List user organizations
+      operationId: listOrgs
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Organizations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /orgs/{org_id}/invite:
+    post:
+      tags: [Organizations]
+      summary: Invite user to organization
+      operationId: inviteToOrg
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: org_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [viewer, member, admin], default: member }
+      responses:
+        '200':
+          description: Invite sent
+
+  # ═══════════════════════════════════════════
+  # NOTIFICATIONS
+  # ═══════════════════════════════════════════
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      operationId: listNotifications
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: unread_only
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+                  total: { type: integer }
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread count
+      operationId: unreadCount
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  # ═══════════════════════════════════════════
+  # TAGS & BOOKMARKS
+  # ═══════════════════════════════════════════
+  /tags:
+    post:
+      tags: [Tags]
+      summary: Create tag
+      operationId: createTag
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                color: { type: string, example: "#6b7280" }
+      responses:
+        '201':
+          description: Tag created
+    get:
+      tags: [Tags]
+      summary: List tags
+      operationId: listTags
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      responses:
+        '200':
+          description: User tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  /bookmarks:
+    post:
+      tags: [Tags]
+      summary: Toggle bookmark
+      operationId: toggleBookmark
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bucket_id: { type: integer }
+                file_id: { type: integer }
+                note: { type: string }
+      responses:
+        '200':
+          description: Bookmark toggled
+    get:
+      tags: [Tags]
+      summary: List bookmarks
+      operationId: listBookmarks
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [all, bucket, file], default: all }
+      responses:
+        '200':
+          description: Bookmarks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  # ═══════════════════════════════════════════
+  # REPORTS
+  # ═══════════════════════════════════════════
+  /reports/generate:
+    post:
+      tags: [Reports]
+      summary: Generate report
+      operationId: generateReport
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [security, compliance, executive] }
+                format: { type: string, enum: [json, html], default: json }
+      responses:
+        '200':
+          description: Report generated
+
+  /reports:
+    get:
+      tags: [Reports]
+      summary: List reports
+      operationId: listReports
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+      responses:
+        '200':
+          description: Reports list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+                  total: { type: integer }
+
+  # ═══════════════════════════════════════════
+  # INTEGRATIONS
+  # ═══════════════════════════════════════════
+  /integrations:
+    post:
+      tags: [Integrations]
+      summary: Create integration
+      operationId: createIntegration
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, name, config]
+              properties:
+                type: { type: string, enum: [slack, jira] }
+                name: { type: string }
+                config: { type: object, description: Integration-specific configuration }
+      responses:
+        '201':
+          description: Integration created
+    get:
+      tags: [Integrations]
+      summary: List integrations
+      operationId: listIntegrations
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [slack, jira] }
+      responses:
+        '200':
+          description: Integrations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+
+  # ═══════════════════════════════════════════
+  # ACTIVITY & AUDIT
+  # ═══════════════════════════════════════════
+  /activity:
+    get:
+      tags: [Activity]
+      summary: API request activity log
+      operationId: getActivity
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Activity log
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+                  total: { type: integer }
+
+  /audit-log:
+    get:
+      tags: [Activity]
+      summary: Audit trail
+      operationId: getAuditLog
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      parameters:
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: entity_type
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+                  total: { type: integer }
+
+  /providers:
+    get:
+      tags: [Health]
+      summary: List cloud providers
+      operationId: listProviders
+      responses:
+        '200':
+          description: Available providers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        display_name: { type: string }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT token from /auth/login
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key from user profile
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    Unauthorized:
+      description: Authentication required or invalid
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: Authentication required }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: Not found }
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: Rate limit exceeded }
+              limit: { type: integer, example: 100 }
+              tier: { type: string, example: free }
+              reset_at: { type: string, format: date-time }
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        username: { type: string }
+        tier: { type: string, enum: [free, premium, enterprise] }
+        api_key: { type: string }
+        totp_enabled: { type: boolean }
+        queries_today: { type: integer }
+        joined_at: { type: string, format: date-time }
+
+    Bucket:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string, example: company-backups }
+        provider_name: { type: string, example: aws }
+        region: { type: string, example: us-east-1 }
+        url: { type: string, format: uri }
+        status: { type: string, enum: [open, closed, partial] }
+        file_count: { type: integer }
+        total_size_bytes: { type: integer }
+        risk_score: { type: integer, minimum: 0, maximum: 100 }
+        risk_level: { type: string, enum: [critical, high, medium, low, info] }
+        first_seen: { type: string, format: date-time }
+        last_scanned: { type: string, format: date-time }
+
+    File:
+      type: object
+      properties:
+        id: { type: integer }
+        bucket_id: { type: integer }
+        name: { type: string, example: config/database.env }
+        extension: { type: string, example: env }
+        size: { type: integer }
+        content_type: { type: string }
+        last_modified: { type: string, format: date-time }
+        ai_classification: { type: string, enum: [credentials, pii, financial, medical, infrastructure, source_code, database, generic] }
+        ai_risk_score: { type: integer }
+
+    ScanJob:
+      type: object
+      properties:
+        id: { type: integer }
+        scan_type: { type: string, example: discovery }
+        status: { type: string, enum: [pending, running, completed, failed, cancelled] }
+        config: { type: object }
+        names_checked: { type: integer }
+        buckets_found: { type: integer }
+        buckets_open: { type: integer }
+        files_indexed: { type: integer }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        created_by: { type: integer }
+
+    Alert:
+      type: object
+      properties:
+        id: { type: integer }
+        bucket_id: { type: integer }
+        type: { type: string }
+        severity: { type: string, enum: [critical, high, medium, low, info] }
+        title: { type: string }
+        description: { type: string }
+        is_read: { type: boolean }
+        is_resolved: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    ScanDiff:
+      type: object
+      properties:
+        id: { type: integer }
+        bucket_id: { type: integer }
+        diff_type: { type: string, enum: [new_bucket, status_change, files_added, files_removed, size_change] }
+        summary: { type: string }
+        details: { type: object }
+        severity: { type: string, enum: [critical, high, medium, low, info] }
+        is_reviewed: { type: boolean }
+        created_at: { type: string, format: date-time }

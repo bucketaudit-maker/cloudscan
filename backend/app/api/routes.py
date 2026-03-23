@@ -8,7 +8,9 @@ import time
 import threading
 from datetime import datetime, timedelta
 
-from flask import Blueprint, request, jsonify, g, Response, stream_with_context
+from pathlib import Path
+
+from flask import Blueprint, request, jsonify, g, Response, stream_with_context, send_file
 
 from backend.app.config import settings
 from backend.app.models.database import (
@@ -134,6 +136,48 @@ def _log_request(response):
 @api.route("/health")
 def health():
     return jsonify({"status": "ok", "timestamp": datetime.utcnow().isoformat(), "version": "1.0.0"})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SWAGGER / OPENAPI
+# ═══════════════════════════════════════════════════════════════════
+
+_OPENAPI_PATH = Path(__file__).resolve().parent.parent / "openapi.yaml"
+
+@api.route("/openapi.yaml")
+def openapi_spec():
+    """Serve the raw OpenAPI spec."""
+    return send_file(_OPENAPI_PATH, mimetype="text/yaml")
+
+
+@api.route("/docs")
+def swagger_ui():
+    """Serve Swagger UI via CDN — no extra Python dependencies."""
+    return Response("""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>CloudScan API — Swagger</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
+  <style>
+    body { margin: 0; background: #fafafa; }
+    .swagger-ui .topbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/api/v1/openapi.yaml',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+    });
+  </script>
+</body>
+</html>""", content_type="text/html")
 
 
 # ═══════════════════════════════════════════════════════════════════
