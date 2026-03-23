@@ -125,6 +125,7 @@ export default function App() {
   const [expandedApi, setExpandedApi] = useState<string|null>(null)
   const [apiFilterTag, setApiFilterTag] = useState('')
   const [apiSearchQ, setApiSearchQ] = useState('')
+  const [navDropdown, setNavDropdown] = useState<string|null>(null)
   // Sprint 6 state: 2FA, Drift, Alert Rules, Dashboard
   const [twoFaStatus, setTwoFaStatus] = useState<any>(null)
   const [twoFaSetup, setTwoFaSetup] = useState<any>(null)
@@ -285,24 +286,46 @@ export default function App() {
         </div></div>}
 
       {/* ─── NAV ─── */}
-      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}}>
+      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}} onClick={(e)=>{if(!(e.target as HTMLElement).closest('[data-dropdown]'))setNavDropdown(null)}}>
         <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
-        <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden'}}>
-          {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['drift','Drift','△'],['rules','Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['dashboard','Dashboard','◈'],['ai-insights','AI','✦'],['api-docs','API','{ }'],['pricing','Pricing','◇']]).map(([id,l,ic])=>(
-            <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else setView(id as string)}}
-              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
-              <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
-              {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
-            </button>))}</div>
+        {(()=>{
+          const navClick=(id:string)=>{setNavDropdown(null);if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else setView(id as string)}
+          const navBtn=(id:string,l:string,ic:string)=><button key={id} onClick={()=>navClick(id)}
+            style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
+            <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
+            {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
+          </button>
+          const dropBtn=(label:string,ic:string,menuId:string,items:[string,string,string][])=>{
+            const activeInGroup=items.some(([id])=>view===id)
+            return <div key={menuId} style={{position:'relative'}} data-dropdown>
+              <button onClick={(e)=>{e.stopPropagation();setNavDropdown(navDropdown===menuId?null:menuId)}}
+                style={{background:activeInGroup?'var(--bg-tertiary)':navDropdown===menuId?'var(--bg-hover)':'transparent',border:activeInGroup?'1px solid var(--border-default)':'1px solid transparent',color:activeInGroup?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:activeInGroup?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
+                <span style={{fontSize:10}}>{ic}</span>{label}<span style={{fontSize:8,opacity:0.6,marginLeft:2}}>{navDropdown===menuId?'▲':'▼'}</span>
+              </button>
+              {navDropdown===menuId && <div className="card-static" style={{position:'absolute',top:'calc(100% + 4px)',left:0,minWidth:180,padding:4,boxShadow:'var(--shadow-lg)',zIndex:200}}>
+                {items.map(([id,l,ic2])=><button key={id} onClick={()=>navClick(id)}
+                  style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:6,cursor:'pointer',color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
+                  <span style={{fontSize:11,width:16,textAlign:'center'}}>{ic2}</span>{l}
+                </button>)}
+              </div>}
+            </div>}
+          return <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden',alignItems:'center'}}>
+            {navBtn('search','Files','⌕')}
+            {navBtn('buckets','Buckets','◫')}
+            {navBtn('scan','Scanner','⟳')}
+            {navBtn('monitor','Monitor','◉')}
+            {navBtn('dashboard','Dashboard','◈')}
+            {dropBtn('Security','⚑','security',[['drift','Drift Detection','△'],['rules','Alert Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediation','✓']])}
+            {dropBtn('More','···','more',[['ai-insights','AI Insights','✦'],['api-docs','API Docs','{ }'],['pricing','Pricing','◇']])}
+          </div>
+        })()}
         <div style={{flex:1,minWidth:0}}/>
-        <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,padding:'3px 7px',cursor:'pointer',fontSize:13,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
           {sseConnected && <div style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'var(--accent)'}}>
             <div style={{width:5,height:5,borderRadius:'50%',background:'var(--accent)',animation:'pulse 2s infinite'}}/>LIVE</div>}
-          {stats && <div style={{display:'flex',gap:12,fontSize:10,color:'var(--text-tertiary)'}}>
-            <span>◫ {fnum(stats.total_buckets)}</span><span>⬡ {fnum(stats.total_files)}</span><span>⬢ {fmt(stats.total_size_bytes)}</span></div>}
           {user && <div style={{position:'relative',cursor:'pointer'}} onClick={()=>{setShowNotifPanel(!showNotifPanel);if(!showNotifPanel)loadNotifications()}}>
             <span style={{fontSize:16}} title="Notifications">🔔</span>
             {notifCount > 0 && <span style={{position:'absolute',top:-5,right:-5,background:'#f04848',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{notifCount > 9 ? '9+' : notifCount}</span>}
