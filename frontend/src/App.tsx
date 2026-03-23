@@ -8,7 +8,7 @@ const ago = (d:string) => { if(!d) return '—'; const s=Math.floor((Date.now()-
 const PC:any = { aws:{bg:'#ff9900',t:'#000'}, azure:{bg:'#0078d4',t:'#fff'}, gcp:{bg:'#4285f4',t:'#fff'}, digitalocean:{bg:'#0080ff',t:'#fff'}, alibaba:{bg:'#ff6a00',t:'#fff'} }
 const PL:any = { aws:'AWS S3', azure:'Azure Blob', gcp:'GCP Storage', digitalocean:'DO Spaces', alibaba:'Alibaba OSS' }
 const EI:any = { sql:'🗄️',csv:'📊',json:'📋',yaml:'⚙️',yml:'⚙️',xml:'📄',pdf:'📕',docx:'📘',xlsx:'📗',zip:'📦',gz:'📦',env:'🔑',key:'🔐',pem:'🔐',pub:'🔐',sh:'🖥️',py:'🐍',js:'📜',css:'🎨',html:'🌐',log:'📝',md:'📝',ini:'⚙️',tfstate:'🏗️',bak:'💾',sqlite:'🗄️',parquet:'📊',php:'🐘' }
-const IS = {width:'100%' as const,boxSizing:'border-box' as const,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',color:'var(--text-primary)',fontSize:13,fontFamily:'var(--font-mono)'}
+const IS = {width:'100%' as const,boxSizing:'border-box' as const,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',color:'var(--text-primary)',fontSize:13,fontFamily:'var(--font-body)'}
 
 let _token: string | null = null
 try { _token = localStorage.getItem('cs_token') } catch{}
@@ -257,10 +257,10 @@ export default function App() {
   // This prevents React from remounting inputs on every state change
   // ═══════════════════════════════════════════════════════════════
   return (
-    <div style={{minHeight:'100vh',background:'var(--bg-primary)',color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>
+    <div style={{minHeight:'100vh',background:'var(--bg-primary)',color:'var(--text-primary)',fontFamily:'var(--font-body)'}}>
       {/* ─── WELCOME MODAL ─── */}
       {showWelcome && user && <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowWelcome(false)}>
-        <div onClick={e=>e.stopPropagation()} style={{width:520,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:16,padding:40,textAlign:'center'}} className="fade-in">
+        <div onClick={e=>e.stopPropagation()} className="card-static fade-in" style={{width:520,padding:40,textAlign:'center',borderRadius:16}}>
           <div style={{width:56,height:56,borderRadius:14,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:28,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900,marginBottom:16}}>☁</div>
           <h2 style={{fontSize:24,fontWeight:700,fontFamily:'var(--font-display)',margin:'0 0 8px'}}>Welcome, <span style={{color:'var(--accent)'}}>{user.username}</span>!</h2>
           <p style={{fontSize:13,color:'var(--text-tertiary)',margin:'0 0 28px'}}>Your CloudScan account is ready. Here's what you can do:</p>
@@ -275,18 +275,18 @@ export default function App() {
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <code style={{flex:1,fontSize:11,color:'var(--accent)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const,fontFamily:'var(--font-mono)'}}>{user.api_key}</code>
               <button onClick={()=>{navigator.clipboard.writeText(user.api_key);setCopiedKey(true);setTimeout(()=>setCopiedKey(false),2000)}} style={{background:copiedKey?'var(--accent-bg)':'var(--bg-secondary)',border:`1px solid ${copiedKey?'rgba(0,232,123,0.3)':'var(--border-subtle)'}`,color:copiedKey?'var(--accent)':'var(--text-secondary)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>{copiedKey?'Copied!':'Copy'}</button></div></div>}
-          <button onClick={()=>setShowWelcome(false)} style={{width:'100%',background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:10,padding:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'var(--font-mono)'}}>Get Started</button>
+          <button onClick={()=>setShowWelcome(false)} className="btn-primary" style={{width:'100%',borderRadius:10,padding:14,fontSize:14,fontFamily:'var(--font-body)'}}>Get Started</button>
         </div></div>}
 
       {/* ─── NAV ─── */}
-      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-default)',backdropFilter:'blur(20px)',padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}}>
+      <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}}>
         <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         <div style={{display:'flex',gap:2,flexWrap:'nowrap',overflow:'hidden'}}>
           {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['drift','Drift','△'],['rules','Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediate','✓'],['dashboard','Dashboard','◈'],['ai-insights','AI','✦'],['api-docs','API','{ }']]).map(([id,l,ic])=>(
             <button key={id} onClick={()=>{if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else setView(id as string)}}
-              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'var(--font-mono)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
+              style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
               <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
               {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
             </button>))}</div>
@@ -307,7 +307,7 @@ export default function App() {
             <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10}}>Logout</button>
           </> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'5px 14px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:600}}>Sign In</button>}
         </div>
-        {showNotifPanel && <div style={{position:'absolute',top:44,right:60,width:360,maxHeight:400,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.3)',zIndex:1000,overflow:'auto',padding:8}}>
+        {showNotifPanel && <div className="card-static" style={{position:'absolute',top:44,right:60,width:360,maxHeight:400,boxShadow:'var(--shadow-lg)',zIndex:1000,overflow:'auto',padding:8}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border-default)'}}>
             <span style={{fontWeight:700,fontSize:14}}>Notifications</span>
             <button onClick={async()=>{await apiFetch('/notifications/read-all',{method:'POST'});loadNotifCount();loadNotifications()}} style={{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:12}}>Mark all read</button>
@@ -323,7 +323,7 @@ export default function App() {
 
       {/* ─── AUTH ─── */}
       {view==='auth' && <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <div style={{width:420,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:40}} className="fade-in">
+        <div className="card-static fade-in" style={{width:420,padding:40}}>
           <div style={{textAlign:'center',marginBottom:32}}>
             <div style={{width:48,height:48,borderRadius:12,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:24,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900,marginBottom:12}}>☁</div>
             <h2 style={{fontSize:24,fontWeight:700,fontFamily:'var(--font-display)',margin:'0 0 4px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></h2>
@@ -390,17 +390,17 @@ export default function App() {
           <div style={{position:'relative',maxWidth:620,margin:'0 auto 24px'}} className="slide-up">
             <div style={{display:'flex',background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden',boxShadow:'0 0 40px var(--accent-glow),0 4px 24px rgba(0,0,0,0.4)'}}>
               <span style={{display:'flex',alignItems:'center',padding:'0 16px',color:'var(--text-muted)',fontSize:18}}>⌕</span>
-              <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search files... (.env, backup.sql, credentials)" style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:15,padding:'16px 0',fontFamily:'var(--font-mono)'}}/>
-              <button onClick={()=>doSearch(heroQ)} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',padding:'0 28px',cursor:'pointer',color:'#000',fontWeight:700,fontSize:13,fontFamily:'var(--font-mono)'}}>SEARCH</button></div></div>
-          <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>{['.env','backup.sql','credentials.json','id_rsa','terraform.tfstate','.key','*.csv'].map(q=><button key={q} onClick={()=>{setHeroQ(q);doSearch(q)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'5px 12px',color:'var(--text-tertiary)',fontSize:12,cursor:'pointer',fontFamily:'var(--font-mono)'}}>{q}</button>)}</div>
+              <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search files... (.env, backup.sql, credentials)" style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:15,padding:'16px 0',fontFamily:'var(--font-body)'}}/>
+              <button onClick={()=>doSearch(heroQ)} className="btn-primary" style={{padding:'0 28px',fontSize:13,fontFamily:'var(--font-body)',letterSpacing:'0.5px'}}>SEARCH</button></div></div>
+          <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>{['.env','backup.sql','credentials.json','id_rsa','terraform.tfstate','.key','*.csv'].map(q=><button key={q} onClick={()=>{setHeroQ(q);doSearch(q)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'6px 14px',color:'var(--text-tertiary)',fontSize:12,cursor:'pointer',fontFamily:'var(--font-mono)',boxShadow:'var(--shadow-sm)'}}>{q}</button>)}</div>
           {user && <div style={{marginTop:20,textAlign:'center'}}>
-            <button onClick={()=>{setScanForm({keywords:'backup, staging, dev, test, config',companies:'example',providers:[]});setView('scan');loadScanHistory()}} style={{background:'var(--bg-secondary)',border:'1px solid var(--accent)',borderRadius:10,padding:'12px 28px',cursor:'pointer',color:'var(--accent)',fontSize:13,fontWeight:700,fontFamily:'var(--font-mono)',transition:'all 0.15s'}}>⟳ Try a Demo Scan</button>
+            <button onClick={()=>{setScanForm({keywords:'backup, staging, dev, test, config',companies:'example',providers:[]});setView('scan');loadScanHistory()}} style={{background:'var(--bg-secondary)',border:'1px solid var(--accent)',borderRadius:10,padding:'12px 28px',cursor:'pointer',color:'var(--accent)',fontSize:13,fontWeight:600,fontFamily:'var(--font-body)',boxShadow:'0 0 20px var(--accent-glow)'}}>⟳ Try a Demo Scan</button>
             <p style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>Pre-filled with common keywords to discover exposed buckets</p></div>}
           {stats?.top_extensions && <div style={{marginTop:64,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(85px,1fr))',gap:8,maxWidth:550,margin:'64px auto 0'}}>{stats.top_extensions.slice(0,12).map((e:any)=><div key={e.extension} onClick={()=>doSearch(`*.${e.extension}`)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:8,cursor:'pointer',textAlign:'center'}}>
             <span style={{fontSize:16}}>{EI[e.extension]||'📄'}</span><div style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>.{e.extension}</div><div style={{fontSize:10,color:'var(--text-muted)'}}>{fnum(e.count)}</div></div>)}</div>}
 
           {/* Onboarding Checklist */}
-          {user && !onboarding.dismissed && <div style={{marginTop:40,maxWidth:600,margin:'40px auto 0',background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,textAlign:'left'}}>
+          {user && !onboarding.dismissed && <div className="card-static" style={{marginTop:40,maxWidth:600,margin:'40px auto 0',padding:24,textAlign:'left'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
               <div><div style={{fontSize:14,fontWeight:700,fontFamily:'var(--font-display)',color:'var(--text-primary)'}}>Getting Started</div>
                 <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{[true,onboarding.firstScan,onboarding.firstSearch,onboarding.firstMonitor].filter(Boolean).length}/4 complete</div></div>
@@ -425,7 +425,7 @@ export default function App() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
 
               {/* Risk Distribution */}
-              {dashBreakdown?.risk_distribution && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              {dashBreakdown?.risk_distribution && <div style={{padding:20}} className="card-static">
                 <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Risk Levels</div>
                 {dashBreakdown.risk_distribution.length>0 ? dashBreakdown.risk_distribution.map((r:any)=>{const mx=Math.max(...dashBreakdown.risk_distribution.map((x:any)=>x.count));const pct=mx?(r.count/mx)*100:0;const rc:any={critical:'#f04848',high:'#ff6b35',medium:'#f5a623',low:'#4a9eff',info:'#4a5f73'};return <div key={r.risk_level} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                   <span style={{width:70,fontSize:10,color:rc[r.risk_level]||'var(--text-secondary)',fontWeight:600,textTransform:'uppercase' as const}}>{r.risk_level}</span>
@@ -437,7 +437,7 @@ export default function App() {
 
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
               {/* Status Distribution */}
-              {dashBreakdown?.status_distribution && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              {dashBreakdown?.status_distribution && <div style={{padding:20}} className="card-static">
                 <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Bucket Status</div>
                 {dashBreakdown.status_distribution.map((s:any)=>{const sc:any={open:'var(--accent)',closed:'#f04848',partial:'var(--warning)'};return <div key={s.status} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                   <span style={{width:70,fontSize:10,color:sc[s.status]||'var(--text-secondary)',fontWeight:600,textTransform:'uppercase' as const}}>{s.status}</span>
@@ -446,7 +446,7 @@ export default function App() {
               </div>}
 
               {/* Discovery Timeline */}
-              {dashTimeline?.files_timeline && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+              {dashTimeline?.files_timeline && <div style={{padding:20}} className="card-static">
                 <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Files Discovered (30d)</div>
                 {dashTimeline.files_timeline.length>0 ? <div style={{display:'flex',alignItems:'flex-end',gap:2,height:80}}>
                   {dashTimeline.files_timeline.map((d:any,i:number)=>{const mx=Math.max(...dashTimeline.files_timeline.map((x:any)=>x.count));const h=mx?(d.count/mx)*100:0;return <div key={i} title={`${d.day}: ${d.count} files`} style={{flex:1,background:'var(--accent)',borderRadius:'2px 2px 0 0',height:`${Math.max(h,2)}%`,opacity:0.7,transition:'height 0.3s',minWidth:2}}/>})}
@@ -550,7 +550,7 @@ export default function App() {
       {/* ─── BUCKET DETAIL ─── */}
       {view==='bucket-detail' && (bd ? <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
         <button onClick={()=>setView('buckets')} style={{background:'none',border:'none',color:'var(--text-tertiary)',cursor:'pointer',fontSize:12,marginBottom:16,padding:0}}>← Back</button>
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+        <div style={{padding:24,marginBottom:24}} className="card-static">
           <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,flexWrap:'wrap'}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>{bd.name}</h2><Badge provider={bd.provider_name} big/><SBadge s={bd.status}/>{bd.risk_score!=null&&<RiskBadge score={bd.risk_score} level={bd.risk_level||'info'}/>}
             {aiAvail&&<button onClick={()=>doClassifyBucket(bd.id)} disabled={classifyLoading} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'5px 14px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:11,fontWeight:600,opacity:classifyLoading?0.5:1}}>{classifyLoading?'Analyzing...':'✦ AI Analyze'}</button>}</div>
           {aiClassSummary && Object.keys(aiClassSummary).length>0 && <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>{Object.entries(aiClassSummary).map(([cat,cnt]:any)=><div key={cat} style={{display:'flex',alignItems:'center',gap:4}}><ClassBadge c={cat}/><span style={{fontSize:11,color:'var(--text-muted)'}}>{cnt}</span></div>)}</div>}
@@ -565,7 +565,7 @@ export default function App() {
         <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:8}}>Bucket Discovery Scanner</h2>
         <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:24}}>Real-time scanning across all major cloud providers.</p>
         <LiveScanPanel progress={scanProgress} events={scanEvents}/>
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:28}}>
+        <div style={{padding:28}} className="card-static">
           <div style={{marginBottom:20}}><label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:6}}>KEYWORDS (comma-separated)</label>
             <input value={scanForm.keywords} onChange={e=>setScanForm({...scanForm,keywords:e.target.value})} placeholder="backup, database, config, secret" style={IS}/></div>
           <div style={{marginBottom:20}}><label style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:6}}>TARGET COMPANIES (comma-separated)</label>
@@ -594,7 +594,7 @@ export default function App() {
         {/* Scan Schedules */}
         <div style={{marginTop:32}}>
           <h3 style={{fontSize:15,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:12}}>Scan Schedules</h3>
-          <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+          <div style={{padding:24,marginBottom:16}} className="card-static">
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
               <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>SCHEDULE NAME</label><input value={schedForm.name} onChange={e=>setSchedForm({...schedForm,name:e.target.value})} placeholder="Daily backup scan" style={IS}/></div>
               <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>FREQUENCY</label><select value={schedForm.frequency} onChange={e=>setSchedForm({...schedForm,frequency:e.target.value})} style={{...IS,appearance:'auto' as any}}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
@@ -626,7 +626,7 @@ export default function App() {
         </div> : <>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>🛡 Attack Surface Monitor</h2><span style={{fontSize:11,color:'var(--text-muted)'}}>Logged in as <span style={{color:'var(--accent)'}}>{user.username}</span></span></div>
           {monDash && <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:32}}>{[['Watchlists',monDash.watchlists,'◉','var(--accent)'],['Monitored',monDash.monitored_buckets,'◫','var(--info)'],['Unread',monDash.unread_alerts,'⚠','var(--warning)'],['Critical',monDash.alerts_by_severity?.critical||0,'●','var(--danger)']].map(([l,v,ic,c]:any)=><div key={l} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}><div style={{fontSize:24,marginBottom:4}}>{ic}</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:c}}>{v}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{l}</div></div>)}</div>}
-          <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+          <div style={{padding:24,marginBottom:24}} className="card-static">
             <h3 style={{fontSize:15,marginBottom:16}}>Create Watchlist</h3>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
               <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>NAME</label><input value={wlForm.name} onChange={e=>setWlForm({...wlForm,name:e.target.value})} placeholder="My Company Monitor" style={IS}/></div>
@@ -638,7 +638,7 @@ export default function App() {
               <div style={{display:'flex',gap:6}}>{Object.entries(PL).map(([k,l])=>{const a=wlForm.providers.includes(k);return <button key={k} onClick={()=>setWlForm({...wlForm,providers:a?wlForm.providers.filter(p=>p!==k):[...wlForm.providers,k]})} style={{background:a?PC[k].bg+'20':'var(--bg-primary)',border:`1px solid ${a?PC[k].bg:'var(--border-subtle)'}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',color:a?PC[k].bg:'var(--text-muted)',fontSize:11}}>{l as string}</button>})}</div></div>
             <button onClick={createWatchlist} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'10px 24px',color:'#000',fontWeight:700,cursor:'pointer'}}>+ Create Watchlist</button></div>
           {watchlists.length>0 && <div style={{marginBottom:32}}><h3 style={{fontSize:15,marginBottom:12}}>Active Watchlists</h3>
-            {watchlists.map((wl:any)=><div key={wl.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            {watchlists.map((wl:any)=><div key={wl.id} style={{padding:20,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}} className="card">
               <div><div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{wl.name}</div><div style={{fontSize:11,color:'var(--text-muted)'}}>Keywords: {(typeof wl.keywords==='string'?JSON.parse(wl.keywords):wl.keywords).join(', ')} | Every {wl.scan_interval_hours}h | Last: {ago(wl.last_scan_at)}</div></div>
               <div style={{display:'flex',gap:6}}><button onClick={()=>triggerWlScan(wl.id)} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:11}}>Scan Now</button><button onClick={()=>deleteWl(wl.id)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:11}}>Delete</button></div></div>)}</div>}
           <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12,flexWrap:'wrap'}}>
@@ -664,7 +664,7 @@ export default function App() {
             {a.ai_priority_score!=null&&<span style={{background:'#a855f715',border:'1px solid #a855f730',color:'#a855f7',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>⚡{a.ai_priority_score}</span>}{a.provider_name&&<Badge provider={a.provider_name}/>}<span style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap' as const}}>{ago(a.created_at)}</span>{!a.is_read&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>}</div>)}</div>}
           <div style={{marginTop:32}}>
             <h3 style={{fontSize:15,marginBottom:12}}>Webhooks</h3>
-            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+            <div style={{padding:24,marginBottom:16}} className="card-static">
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
                 <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>NAME</label><input value={whForm.name} onChange={e=>setWhForm({...whForm,name:e.target.value})} placeholder="Slack Alert" style={IS}/></div>
                 <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>URL</label><input value={whForm.url} onChange={e=>setWhForm({...whForm,url:e.target.value})} placeholder="https://hooks.slack.com/..." style={IS}/></div></div>
@@ -673,7 +673,7 @@ export default function App() {
                 <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:6}}>EVENT TYPES</label>
                   <div style={{display:'flex',gap:6}}>{['critical','high','medium','low'].map(s=>{const a=whForm.event_types.includes(s);return <button key={s} onClick={()=>setWhForm({...whForm,event_types:a?whForm.event_types.filter(e=>e!==s):[...whForm.event_types,s]})} style={{background:a?'var(--accent-bg)':'var(--bg-primary)',border:`1px solid ${a?'rgba(0,232,123,0.3)':'var(--border-subtle)'}`,borderRadius:6,padding:'3px 8px',cursor:'pointer',color:a?'var(--accent)':'var(--text-muted)',fontSize:10,fontWeight:600,textTransform:'uppercase' as const}}>{s}</button>})}</div></div></div>
               <button onClick={createWebhook} style={{background:'linear-gradient(135deg,var(--accent),#00c568)',border:'none',borderRadius:8,padding:'8px 20px',color:'#000',fontWeight:700,cursor:'pointer',fontSize:12}}>+ Add Webhook</button></div>
-            {webhooks.length>0 && webhooks.map((wh:any)=><div key={wh.id} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:'14px 20px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            {webhooks.length>0 && webhooks.map((wh:any)=><div key={wh.id} style={{padding:'14px 20px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}} className="card">
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><span style={{fontSize:13,fontWeight:600}}>{wh.name}</span><span style={{width:8,height:8,borderRadius:'50%',background:wh.is_active?'var(--accent)':'var(--text-muted)'}}/>{wh.failure_count>0&&<span style={{fontSize:10,color:'var(--danger)'}}>Failures: {wh.failure_count}</span>}</div>
                 <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{wh.url.replace(/^https?:\/\//,'').slice(0,50)}... | {(() => { try { return (typeof wh.event_types==='string'?JSON.parse(wh.event_types):wh.event_types).join(', ') } catch { return '' } })()} | Last: {ago(wh.last_triggered)}</div></div>
@@ -701,7 +701,7 @@ export default function App() {
         </div>
 
         {/* NL Search */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+        <div style={{padding:24,marginBottom:24}} className="card-static">
           <h3 style={{fontSize:15,marginBottom:12,display:'flex',alignItems:'center',gap:8}}>✦ Natural Language Search</h3>
           <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>Search your indexed files using plain English queries.</p>
           <div style={{display:'flex',gap:8}}><input value={nlQuery} onChange={e=>setNlQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doNlSearch(nlQuery)} placeholder="Find SQL backups in AWS that are larger than 1MB..." style={{...IS,flex:1,border:'1px solid #a855f730'}}/>
@@ -711,7 +711,7 @@ export default function App() {
         </div>
 
         {/* Security Report */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+        <div style={{padding:24,marginBottom:24}} className="card-static">
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><h3 style={{fontSize:15,margin:0,display:'flex',alignItems:'center',gap:8}}>✦ Security Report</h3>
             <button onClick={doGenReport} disabled={aiReportLoading||!aiAvail} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'6px 16px',borderRadius:6,cursor:aiReportLoading||!aiAvail?'not-allowed':'pointer',color:'#fff',fontSize:11,fontWeight:600,opacity:aiReportLoading||!aiAvail?0.5:1}}>{aiReportLoading?'Generating...':'✦ Generate Report'}</button></div>
           <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>Generate an AI-powered executive summary of your cloud storage security posture.</p>
@@ -725,7 +725,7 @@ export default function App() {
         </div>
 
         {/* Classification Overview */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24}}>
+        <div style={{padding:24}} className="card-static">
           <h3 style={{fontSize:15,marginBottom:12,display:'flex',alignItems:'center',gap:8}}>✦ File Classification Overview</h3>
           <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>AI-assigned sensitivity categories across all indexed files.</p>
           {aiClassSummary && Object.keys(aiClassSummary).length>0 ? <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:12}}>
@@ -758,7 +758,7 @@ export default function App() {
         </div>}
 
         {/* Results Table */}
-        {complianceResults.length > 0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden'}}>
+        {complianceResults.length > 0 && <div style={{overflow:'hidden'}} className="card-static">
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
             <thead><tr style={{background:'rgba(0,0,0,0.2)'}}>
               <th style={{padding:'10px 12px',textAlign:'left'}}>Control</th>
@@ -784,14 +784,14 @@ export default function App() {
 
         {/* Dashboard Cards */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:24}}>
-          {[{label:'Open',key:'open',color:'#f04848'},{label:'In Progress',key:'in_progress',color:'#ffc107'},{label:'Verified',key:'verified',color:'var(--accent)'},{label:'Closed',key:'closed',color:'var(--text-secondary)'},{label:'Overdue',key:'overdue',color:'#fd7e14'}].map(s=><div key={s.key} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:16,textAlign:'center'}}>
+          {[{label:'Open',key:'open',color:'#f04848'},{label:'In Progress',key:'in_progress',color:'#ffc107'},{label:'Verified',key:'verified',color:'var(--accent)'},{label:'Closed',key:'closed',color:'var(--text-secondary)'},{label:'Overdue',key:'overdue',color:'#fd7e14'}].map(s=><div key={s.key} style={{padding:16,textAlign:'center'}} className="card-static">
             <div style={{fontSize:28,fontWeight:700,color:s.color}}>{remDashboard[s.key]||0}</div>
             <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:4}}>{s.label}</div>
           </div>)}
         </div>
 
         {/* Create Remediation */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:16,marginBottom:20}}>
+        <div style={{padding:16,marginBottom:20}} className="card-static">
           <div style={{fontWeight:700,marginBottom:12}}>Create Remediation</div>
           <form onSubmit={async(e)=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);const r=await apiFetch('/remediations',{method:'POST',body:JSON.stringify({bucket_id:parseInt(fd.get('bucket_id') as string)||1,title:fd.get('title'),priority:fd.get('priority')||'medium',description:fd.get('description'),due_date:fd.get('due_date')||undefined})});if(r?.id){loadRemediations();loadRemDashboard();(e.target as HTMLFormElement).reset()}}} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr auto',gap:12,alignItems:'end'}}>
             <div><label style={{fontSize:12,color:'var(--text-secondary)'}}>Title</label><input name="title" required style={{width:'100%',padding:8,background:'var(--bg-primary)',border:'1px solid var(--border-default)',borderRadius:6,color:'var(--text-primary)'}}/></div>
@@ -802,7 +802,7 @@ export default function App() {
         </div>
 
         {/* Remediation List */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden'}}>
+        <div style={{overflow:'hidden'}} className="card-static">
           {bulkRems.length>0 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',background:'var(--bg-tertiary)',borderBottom:'1px solid var(--accent)'}}>
             <span style={{fontSize:12,fontWeight:700,color:'var(--accent)'}}>{bulkRems.length} selected</span>
             <button onClick={async()=>{await apiFetch('/remediations/bulk-close',{method:'POST',body:JSON.stringify({remediation_ids:bulkRems})});setBulkRems([]);loadRemediations();loadRemDashboard()}} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Close All</button>
@@ -833,13 +833,13 @@ export default function App() {
       {view==='settings' && user && <div style={{padding:'80px 24px 24px',maxWidth:600,margin:'0 auto'}}>
         <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:24}}>Account Settings</h2>
         {settingsMsg&&<div style={{background:settingsMsg.includes('fail')||settingsMsg.includes('match')?'rgba(240,72,72,0.1)':'var(--accent-bg)',border:`1px solid ${settingsMsg.includes('fail')||settingsMsg.includes('match')?'rgba(240,72,72,0.2)':'rgba(0,232,123,0.2)'}`,borderRadius:8,padding:'8px 16px',marginBottom:16,fontSize:12,color:settingsMsg.includes('fail')||settingsMsg.includes('match')?'var(--danger)':'var(--accent)'}}>{settingsMsg}</div>}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+        <div style={{padding:24,marginBottom:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Account Info</h3>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             {[['Email',user.email],['Username',user.username],['Tier',user.tier?.toUpperCase()],['Member Since',user.created_at?new Date(user.created_at).toLocaleDateString():'—'],['Last Login',ago(user.last_login)],['Queries Today',user.queries_today||0]].map(([l,v]:any)=><div key={l} style={{padding:12,background:'var(--bg-primary)',borderRadius:8,border:'1px solid var(--border-subtle)'}}><div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase' as const}}>{l}</div><div style={{fontSize:13,color:'var(--text-primary)',fontWeight:600}}>{v}</div></div>)}
           </div>
         </div>
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:16}}>
+        <div style={{padding:24,marginBottom:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>API Key</h3>
           <div style={{display:'flex',alignItems:'center',gap:12}}>
             <div style={{flex:1,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',fontFamily:'var(--font-mono)',fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{showApiKey?user.api_key:'cs_••••••••••••••••••••••••••••••'}</div>
@@ -848,7 +848,7 @@ export default function App() {
             <button onClick={rotateApiKey} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--warning)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>Rotate</button>
           </div>
         </div>
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24}}>
+        <div style={{padding:24}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Update Profile</h3>
           <div style={{marginBottom:12}}><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>NEW USERNAME</label>
             <input value={settingsForm.username} onChange={e=>setSettingsForm({...settingsForm,username:e.target.value})} placeholder={user.username} style={IS}/></div>
@@ -860,7 +860,7 @@ export default function App() {
         </div>
 
         {/* Two-Factor Authentication */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+        <div style={{padding:24,marginTop:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:4,color:'var(--text-secondary)'}}>Two-Factor Authentication</h3>
           <p style={{fontSize:11,color:'var(--text-muted)',margin:'0 0 16px'}}>Add an extra layer of security to your account with TOTP-based 2FA.</p>
           {!twoFaStatus ? <button onClick={load2faStatus} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'8px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600}}>Check 2FA Status</button>
@@ -890,7 +890,7 @@ export default function App() {
         </div>
 
         {/* Organizations */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+        <div style={{padding:24,marginTop:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Organizations</h3>
           <form onSubmit={async(e:any)=>{e.preventDefault();const name=e.target.orgName.value.trim();if(!name)return;const slug=name.toLowerCase().replace(/[^a-z0-9]/g,'-');const r=await apiFetch('/orgs',{method:'POST',body:JSON.stringify({name,slug})});if(r?.id)loadOrgs();e.target.reset()}} style={{display:'flex',gap:8,marginBottom:12}}>
             <input name="orgName" placeholder="Organization name" required style={{flex:1,padding:'8px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,color:'var(--text-primary)',fontSize:12}}/>
@@ -903,7 +903,7 @@ export default function App() {
         </div>
 
         {/* Integrations */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+        <div style={{padding:24,marginTop:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Integrations</h3>
           <div style={{display:'flex',gap:12,flexWrap:'wrap' as const,marginBottom:12}}>
             {(['slack','jira'] as const).map(t=><div key={t} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:16,flex:'1 1 180px'}}>
@@ -922,7 +922,7 @@ export default function App() {
         </div>
 
         {/* Tags */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+        <div style={{padding:24,marginTop:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:4,color:'var(--text-secondary)'}}>Tags</h3>
           <p style={{fontSize:11,color:'var(--text-muted)',margin:'0 0 16px'}}>Create tags to organize and categorize your buckets.</p>
           <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'end'}}>
@@ -947,7 +947,7 @@ export default function App() {
         </div>
 
         {/* Audit Log */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginTop:16}}>
+        <div style={{padding:24,marginTop:16}} className="card-static">
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
             <div><h3 style={{fontSize:14,margin:0,color:'var(--text-secondary)'}}>Audit Log</h3><p style={{fontSize:11,color:'var(--text-muted)',margin:'4px 0 0'}}>Track all changes and actions in your account.</p></div>
             <button onClick={()=>loadAuditLog(1)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'5px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600}}>Load Log</button>
@@ -1057,7 +1057,7 @@ export default function App() {
         <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:24}}>Define your own rules to get alerted when buckets or files match your criteria.</p>
 
         {/* Create Rule Form */}
-        <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,marginBottom:24}}>
+        <div style={{padding:24,marginBottom:24}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>Create Rule</h3>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
             <div><label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:4}}>RULE NAME</label>
@@ -1136,7 +1136,7 @@ export default function App() {
 
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
             {/* Risk Distribution */}
-            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+            <div style={{padding:20}} className="card-static">
               <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Risk Distribution</h3>
               {execDash.risk_distribution && Object.entries(execDash.risk_distribution).length>0 ?
                 Object.entries(execDash.risk_distribution).map(([level,count]:any)=>{const c:any={critical:'#f04848',high:'#ff6b35',medium:'#f5a623',low:'#4a9eff',info:'#4a5f73'};return <div key={level} style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -1148,7 +1148,7 @@ export default function App() {
             </div>
 
             {/* Unresolved Alerts */}
-            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+            <div style={{padding:20}} className="card-static">
               <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Unresolved Alerts</h3>
               {execDash.unresolved_alerts && Object.entries(execDash.unresolved_alerts).length>0 ?
                 Object.entries(execDash.unresolved_alerts).map(([sev,count]:any)=><div key={sev} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border-subtle)'}}>
@@ -1158,7 +1158,7 @@ export default function App() {
           </div>
 
           {/* Sensitive Files */}
-          {execDash.sensitive_files && Object.keys(execDash.sensitive_files).length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:24}}>
+          {execDash.sensitive_files && Object.keys(execDash.sensitive_files).length>0 && <div style={{padding:20,marginBottom:24}} className="card-static">
             <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Sensitive Files Detected</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
               {Object.entries(execDash.sensitive_files).map(([cls,count]:any)=><div key={cls} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:12,textAlign:'center'}}>
@@ -1167,7 +1167,7 @@ export default function App() {
           </div>}
 
           {/* Drift Summary */}
-          {execDash.drift_summary && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:24}}>
+          {execDash.drift_summary && <div style={{padding:20,marginBottom:24}} className="card-static">
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
               <h3 style={{fontSize:14,fontWeight:700,margin:0}}>Drift Summary</h3>
               <button onClick={()=>{setView('drift');loadDriftDiffs();loadDriftSummary()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:11}}>View All →</button>
@@ -1180,7 +1180,7 @@ export default function App() {
           </div>}
 
           {/* Risk Trends Chart */}
-          {riskTrends?.risk_trends?.length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginBottom:24}}>
+          {riskTrends?.risk_trends?.length>0 && <div style={{padding:20,marginBottom:24}} className="card-static">
             <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Scan Activity Trends (30 days)</h3>
             <div style={{display:'flex',alignItems:'end',gap:2,height:120,padding:'0 4px'}}>
               {riskTrends.risk_trends.map((d:any,i:number)=>{const maxFiles=Math.max(...riskTrends.risk_trends.map((x:any)=>x.total_files||0),1);const h=Math.max(4,((d.total_files||0)/maxFiles)*100);return <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}} title={`${d.day}: ${d.total_files||0} files, ${d.open_count||0} open`}>
@@ -1194,7 +1194,7 @@ export default function App() {
 
           {/* Remediation SLA */}
           {remSla && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
-            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+            <div style={{padding:20}} className="card-static">
               <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Remediation SLA</h3>
               {remSla.time_to_close && Object.entries(remSla.time_to_close).length>0 ?
                 Object.entries(remSla.time_to_close).map(([pri,data]:any)=><div key={pri} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border-subtle)'}}>
@@ -1202,7 +1202,7 @@ export default function App() {
                   <span style={{fontSize:12,color:'var(--text-secondary)'}}>Avg {data.avg_days}d ({data.count} closed)</span></div>)
               : <div style={{color:'var(--text-muted)',fontSize:12}}>No completed remediations yet.</div>}
             </div>
-            <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+            <div style={{padding:20}} className="card-static">
               <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Open Remediation Aging</h3>
               {remSla.open_aging ? <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
                 {[['< 7 days',remSla.open_aging.this_week,'var(--accent)'],['7-30 days',remSla.open_aging.this_month,'var(--warning)'],['> 30 days',remSla.open_aging.older,'#f04848']].map(([l,v,c]:any)=>
@@ -1213,7 +1213,7 @@ export default function App() {
           </div>}
 
           {/* Top Exposed Buckets */}
-          {execDash.top_exposed_buckets?.length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20}}>
+          {execDash.top_exposed_buckets?.length>0 && <div style={{padding:20}} className="card-static">
             <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Top Exposed Buckets</h3>
             <div style={{display:'grid',gridTemplateColumns:'2fr 80px 80px 80px',gap:8,padding:'6px 12px',fontSize:10,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,borderBottom:'1px solid var(--border-subtle)'}}><span>Bucket</span><span>Files</span><span>Status</span><span>Risk</span></div>
             {execDash.top_exposed_buckets.map((b:any,i:number)=><div key={i} style={{display:'grid',gridTemplateColumns:'2fr 80px 80px 80px',gap:8,padding:'8px 12px',alignItems:'center',background:i%2===0?'var(--bg-primary)':'transparent',borderRadius:4}}>
@@ -1236,7 +1236,7 @@ export default function App() {
 
       {/* ─── TOAST NOTIFICATIONS ─── */}
       {toasts.length>0 && <div style={{position:'fixed',bottom:20,right:20,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>
-        {toasts.map(t=><div key={t.id} className="toast" style={{padding:'12px 20px',borderRadius:10,fontSize:13,fontWeight:600,fontFamily:'var(--font-mono)',boxShadow:'0 4px 20px rgba(0,0,0,0.3)',border:'1px solid',minWidth:280,
+        {toasts.map(t=><div key={t.id} className="toast" style={{padding:'12px 20px',borderRadius:10,fontSize:13,fontWeight:600,fontFamily:'var(--font-body)',boxShadow:'var(--shadow-lg)',border:'1px solid',minWidth:280,
           ...(t.type==='success'?{background:'rgba(0,232,123,0.15)',borderColor:'rgba(0,232,123,0.3)',color:'var(--accent)'}:
              t.type==='error'?{background:'rgba(240,72,72,0.15)',borderColor:'rgba(240,72,72,0.3)',color:'#f04848'}:
              {background:'rgba(74,158,255,0.15)',borderColor:'rgba(74,158,255,0.3)',color:'#4a9eff'})
@@ -1245,7 +1245,7 @@ export default function App() {
 
       {/* ─── CONFIRMATION MODAL ─── */}
       {modal && <div onClick={()=>setModal(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',zIndex:9998,display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <div onClick={e=>e.stopPropagation()} className="fade-in" style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:24,width:400,maxWidth:'90vw'}}>
+        <div onClick={e=>e.stopPropagation()} className="card-static fade-in" style={{padding:24,width:400,maxWidth:'90vw'}}>
           <h3 style={{fontSize:16,fontWeight:700,marginBottom:8}}>{modal.title}</h3>
           <p style={{fontSize:13,color:'var(--text-secondary)',marginBottom:16}}>{modal.msg}</p>
           {modal.input && <input autoFocus value={modalInput} onChange={e=>setModalInput(e.target.value)} style={{...IS,marginBottom:16}} onKeyDown={e=>{if(e.key==='Enter'){modal.onConfirm();setModal(null)}}}/>}
