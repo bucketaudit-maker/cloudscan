@@ -292,34 +292,21 @@ export default function App() {
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         {(()=>{
-          const navClick=(id:string)=>{setNavDropdown(null);if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else setView(id as string)}
-          const navBtn=(id:string,l:string,ic:string)=><button key={id} onClick={()=>navClick(id)}
+          const navClick=(id:string)=>{setNavDropdown(null);if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else if(id==='settings'){setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations();loadTags()}else setView(id as string)}
+          const NB=({id,l,ic}:{id:string,l:string,ic:string})=><button onClick={()=>navClick(id)}
             style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
             <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
             {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
           </button>
-          const dropBtn=(label:string,ic:string,menuId:string,items:[string,string,string][])=>{
-            const activeInGroup=items.some(([id])=>view===id)
-            return <div key={menuId} style={{position:'relative'}}>
-              <button onClick={()=>setNavDropdown(navDropdown===menuId?null:menuId)}
-                style={{background:activeInGroup?'var(--bg-tertiary)':navDropdown===menuId?'var(--bg-hover)':'transparent',border:activeInGroup?'1px solid var(--border-default)':'1px solid transparent',color:activeInGroup?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:activeInGroup?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
-                <span style={{fontSize:10}}>{ic}</span>{label}<span style={{fontSize:8,opacity:0.6,marginLeft:2}}>{navDropdown===menuId?'▲':'▼'}</span>
-              </button>
-              {navDropdown===menuId && <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,minWidth:180,padding:4,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:'var(--radius-lg)',boxShadow:'var(--shadow-lg)',zIndex:201}}>
-                {items.map(([id,l,ic2])=><button key={id} onClick={()=>navClick(id)}
-                  style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:6,cursor:'pointer',color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
-                  <span style={{fontSize:11,width:16,textAlign:'center'}}>{ic2}</span>{l}
-                </button>)}
-              </div>}
-            </div>}
           return <div style={{display:'flex',gap:2,flexWrap:'nowrap',alignItems:'center'}}>
-            {navBtn('search','Files','⌕')}
-            {navBtn('buckets','Buckets','◫')}
-            {navBtn('scan','Scanner','⟳')}
-            {navBtn('monitor','Monitor','◉')}
-            {navBtn('dashboard','Dashboard','◈')}
-            {dropBtn('Security','⚑','security',[['drift','Drift Detection','△'],['rules','Alert Rules','⚑'],['compliance','Compliance','☑'],['remediate','Remediation','✓']])}
-            {dropBtn('More','···','more',[['ai-insights','AI Insights','✦'],['api-docs','API Docs','{ }'],['pricing','Pricing','◇']])}
+            <NB id="search" l="Files" ic="⌕"/>
+            <NB id="buckets" l="Buckets" ic="◫"/>
+            <NB id="scan" l="Scanner" ic="⟳"/>
+            <NB id="monitor" l="Monitor" ic="◉"/>
+            <NB id="dashboard" l="Dashboard" ic="◈"/>
+            <NB id="drift" l="Drift" ic="△"/>
+            <NB id="compliance" l="Compliance" ic="☑"/>
+            <NB id="ai-insights" l="AI" ic="✦"/>
           </div>
         })()}
         <div style={{flex:1,minWidth:0}}/>
@@ -331,11 +318,33 @@ export default function App() {
             <span style={{fontSize:16}} title="Notifications">🔔</span>
             {notifCount > 0 && <span style={{position:'absolute',top:-5,right:-5,background:'#f04848',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{notifCount > 9 ? '9+' : notifCount}</span>}
           </div>}
-          {user ? <>
-            <span style={{fontSize:11,color:'var(--text-secondary)',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{user.username}</span>
-            <button onClick={()=>{setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations();loadTags()}} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 7px',borderRadius:5,cursor:'pointer',fontSize:12}} title="Settings">⚙</button>
-            <button onClick={doLogout} style={{background:'none',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:10}}>Logout</button>
-          </> : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'5px 14px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:600}}>Sign In</button>}
+          {user ? <div style={{position:'relative'}}>
+            <button onClick={()=>setNavDropdown(navDropdown==='user'?null:'user')}
+              style={{display:'flex',alignItems:'center',gap:6,background:navDropdown==='user'?'var(--bg-hover)':'none',border:'1px solid var(--border-subtle)',borderRadius:7,padding:'4px 10px',cursor:'pointer',transition:'all 0.15s'}}>
+              <div style={{width:22,height:22,borderRadius:'50%',background:'linear-gradient(135deg,var(--accent),#00c568)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800,color:'#000'}}>{(user.username||user.email||'U')[0].toUpperCase()}</div>
+              <span style={{fontSize:11,color:'var(--text-secondary)',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{user.username}</span>
+              <span style={{fontSize:8,color:'var(--text-muted)'}}>{navDropdown==='user'?'▲':'▼'}</span>
+            </button>
+            {navDropdown==='user' && <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,minWidth:200,padding:4,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:'var(--radius-lg)',boxShadow:'var(--shadow-lg)',zIndex:201}}>
+              <div style={{padding:'8px 12px',borderBottom:'1px solid var(--border-subtle)',marginBottom:4}}>
+                <div style={{fontSize:12,fontWeight:600,color:'var(--text-primary)'}}>{user.username}</div>
+                <div style={{fontSize:10,color:'var(--text-muted)'}}>{user.email}</div>
+                <div style={{fontSize:9,color:'var(--accent)',fontWeight:700,textTransform:'uppercase' as const,marginTop:2}}>{user.tier||'free'} plan</div>
+              </div>
+              {([['settings','Settings','⚙'],['rules','Alert Rules','⚑'],['remediate','Remediation','✓'],['pricing','Pricing','◇'],['api-docs','API Docs','{ }']]).map(([id,l,ic])=>
+                <button key={id} onClick={()=>{setNavDropdown(null);navClick(id)}}
+                  style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:6,cursor:'pointer',color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
+                  <span style={{fontSize:11,width:16,textAlign:'center'}}>{ic}</span>{l}
+                </button>)}
+              <div style={{borderTop:'1px solid var(--border-subtle)',marginTop:4,paddingTop:4}}>
+                <button onClick={()=>{setNavDropdown(null);doLogout()}}
+                  style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:'transparent',border:'none',borderRadius:6,cursor:'pointer',color:'var(--danger)',fontSize:12,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
+                  <span style={{fontSize:11,width:16,textAlign:'center'}}>⏻</span>Logout
+                </button>
+              </div>
+            </div>}
+          </div>
+          : <button onClick={()=>{setAuthMode('login');setAuthError('');setAuthSuccess('');setView('auth')}} style={{background:'var(--accent)',border:'none',color:'#000',padding:'5px 14px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:600}}>Sign In</button>}
         </div>
         {showNotifPanel && <div className="card-static" style={{position:'absolute',top:44,right:60,width:360,maxHeight:400,boxShadow:'var(--shadow-lg)',zIndex:1000,overflow:'auto',padding:8}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border-default)'}}>
