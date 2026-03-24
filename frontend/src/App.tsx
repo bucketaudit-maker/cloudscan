@@ -309,6 +309,7 @@ export default function App() {
             <NB id="drift" l="Drift" ic="△"/>
             <NB id="compliance" l="Compliance" ic="☑"/>
             <NB id="ai-insights" l="AI" ic="✦"/>
+            <NB id="pricing" l="Pricing" ic="◇"/>
           </div>
         })()}
         <div style={{flex:1,minWidth:0}}/>
@@ -333,7 +334,7 @@ export default function App() {
                 <div style={{fontSize:10,color:'var(--text-muted)'}}>{user.email}</div>
                 <div style={{fontSize:9,color:'var(--accent)',fontWeight:700,textTransform:'uppercase' as const,marginTop:2}}>{user.tier||'free'} plan</div>
               </div>
-              {([['settings','Settings','⚙'],['rules','Alert Rules','⚑'],['remediate','Remediation','✓'],['pricing','Pricing','◇'],['api-docs','API Docs','{ }']]).map(([id,l,ic])=>
+              {([['settings','Settings','⚙'],['rules','Alert Rules','⚑'],['remediate','Remediation','✓'],['api-docs','API Docs','{ }']]).map(([id,l,ic])=>
                 <button key={id} onClick={()=>navGo(id)}
                   style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:6,cursor:'pointer',color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
                   <span style={{fontSize:11,width:16,textAlign:'center'}}>{ic}</span>{l}
