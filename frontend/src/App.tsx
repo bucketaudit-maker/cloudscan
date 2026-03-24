@@ -220,6 +220,9 @@ export default function App() {
       if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d));loadScanHistory();if(job.status==='completed')setOnboarding(o=>({...o,firstScan:true}));if(job.status==='cancelled')setScanProgress(null)}},2000)}
   }
 
+  // ── Nav navigation helper ──
+  const navGo=(id:string)=>{setNavDropdown(null);if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else if(id==='settings'){setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations();loadTags()}else setView(id as string)}
+
   // ── AI helper functions ──
   const doNlSearch = async(q:string) => { if(!q.trim())return; setSLoading(true); setView('search'); setNlQuery(q); setSq(q); const d=await apiFetch('/ai/search',{method:'POST',body:JSON.stringify({query:q})}); if(d){setNlParsed(d.parsed_params);setSr(d)}else{setSr({items:[],total:0})}; setSLoading(false) }
   const doSuggestKw = async() => { const co=scanForm.companies.split(',').map(s=>s.trim()).filter(Boolean); if(!co.length)return; setSuggestLoading(true); const d=await apiFetch('/ai/suggest-keywords',{method:'POST',body:JSON.stringify({company:co[0]})}); if(d?.suggestions){setSuggestedKw(d.suggestions);const existing=scanForm.keywords?scanForm.keywords.split(',').map(s=>s.trim()).filter(Boolean):[]; const merged=[...new Set([...existing,...d.suggestions.slice(0,10)])]; setScanForm(f=>({...f,keywords:merged.join(', ')}))}; setSuggestLoading(false) }
@@ -292,8 +295,7 @@ export default function App() {
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
           <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
         {(()=>{
-          const navClick=(id:string)=>{setNavDropdown(null);if(id==='buckets')loadBk();else if(id==='search'){setView('search');setTimeout(()=>ref.current?.focus(),100)}else if(id==='monitor')loadMonitor();else if(id==='compliance'){setView('compliance');loadComplianceDashboard();loadComplianceFrameworks()}else if(id==='remediate'){setView('remediate');loadRemDashboard();loadRemediations()}else if(id==='ai-insights'){setView('ai-insights');apiFetch('/ai/classifications').then(d=>{if(d?.summary)setAiClassSummary(d.summary)})}else if(id==='scan'){setView('scan');loadScanHistory();loadScanSchedules()}else if(id==='activity'){setView('activity');loadActivity()}else if(id==='drift'){setView('drift');loadDriftDiffs();loadDriftSummary()}else if(id==='rules'){setView('rules');loadAlertRules()}else if(id==='dashboard'){setView('dashboard');loadExecDash()}else if(id==='settings'){setView('settings');apiFetch('/auth/me').then(d=>{if(d?.id)setUser(d)});loadOrgs();loadIntegrations();loadTags()}else setView(id as string)}
-          const NB=({id,l,ic}:{id:string,l:string,ic:string})=><button onClick={()=>navClick(id)}
+          const NB=({id,l,ic}:{id:string,l:string,ic:string})=><button onClick={()=>navGo(id)}
             style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
             <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
             {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
@@ -332,7 +334,7 @@ export default function App() {
                 <div style={{fontSize:9,color:'var(--accent)',fontWeight:700,textTransform:'uppercase' as const,marginTop:2}}>{user.tier||'free'} plan</div>
               </div>
               {([['settings','Settings','⚙'],['rules','Alert Rules','⚑'],['remediate','Remediation','✓'],['pricing','Pricing','◇'],['api-docs','API Docs','{ }']]).map(([id,l,ic])=>
-                <button key={id} onClick={()=>{setNavDropdown(null);navClick(id)}}
+                <button key={id} onClick={()=>navGo(id)}
                   style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:6,cursor:'pointer',color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',textAlign:'left',transition:'background 0.1s'}}>
                   <span style={{fontSize:11,width:16,textAlign:'center'}}>{ic}</span>{l}
                 </button>)}
