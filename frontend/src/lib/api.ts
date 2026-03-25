@@ -11,20 +11,43 @@ interface RequestOptions extends RequestInit {
 class ApiClient {
   private token: string | null = null;
   private apiKey: string | null = null;
+  private csrfToken: string | null = null;
 
   setToken(token: string) { this.token = token; }
   setApiKey(key: string) { this.apiKey = key; }
-  clearAuth() { this.token = null; this.apiKey = null; }
+  clearAuth() { this.token = null; this.apiKey = null; this.csrfToken = null; }
 
-  private getHeaders(): Record<string, string> {
+  private getHeaders(method?: string): Record<string, string> {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.token) h['Authorization'] = `Bearer ${this.token}`;
     else if (this.apiKey) h['X-API-Key'] = this.apiKey;
+    if (this.csrfToken && method && method !== 'GET' && method !== 'HEAD') {
+      h['X-CSRF-Token'] = this.csrfToken;
+    }
     return h;
+  }
+
+  async fetchCsrfToken(): Promise<void> {
+    if (this.csrfToken) return;
+    try {
+      const res = await fetch(`${API_BASE}/csrf-token`, {
+        headers: this.getHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.csrfToken = data.csrf_token;
+      }
+    } catch { /* will retry on next mutating request */ }
   }
 
   async request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { params, ...fetchOptions } = options;
+    const method = fetchOptions.method || 'GET';
+
+    // Ensure we have a CSRF token for state-changing requests
+    if (method !== 'GET' && method !== 'HEAD' && !this.csrfToken && !this.apiKey) {
+      await this.fetchCsrfToken();
+    }
 
     let url = `${API_BASE}${endpoint}`;
     if (params) {
@@ -38,7 +61,7 @@ class ApiClient {
 
     const res = await fetch(url, {
       ...fetchOptions,
-      headers: { ...this.getHeaders(), ...fetchOptions.headers as Record<string, string> },
+      headers: { ...this.getHeaders(method), ...fetchOptions.headers as Record<string, string> },
     });
 
     if (!res.ok) {
@@ -50,18 +73,22 @@ class ApiClient {
   }
 
   // ── Auth ──
-  register(email: string, username: string, password: string) {
-    return this.request('/auth/register', {
+  async register(email: string, username: string, password: string) {
+    const result = await this.request('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, username, password }),
     });
+    this.csrfToken = null; // refresh CSRF token for new session
+    return result;
   }
 
-  login(email: string, password: string) {
-    return this.request('/auth/login', {
+  async login(email: string, password: string) {
+    const result = await this.request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    this.csrfToken = null; // refresh CSRF token for new session
+    return result;
   }
 
   getMe() { return this.request('/auth/me'); }
