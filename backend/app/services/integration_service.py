@@ -12,6 +12,7 @@ import urllib.error
 from datetime import datetime
 
 from backend.app.models.database import IntegrationStore
+from backend.app.utils.url_validation import validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,13 @@ def send_slack_alert(config: dict, alert: dict) -> dict:
         ],
     }).encode("utf-8")
 
+    try:
+        validated_url = validate_url(webhook_url)
+    except ValueError as e:
+        return {"success": False, "error": f"URL blocked: {e}"}
+
     req = urllib.request.Request(
-        webhook_url, data=payload,
+        validated_url, data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -151,8 +157,14 @@ def create_jira_issue(config: dict, alert: dict) -> dict:
     import base64
     auth = base64.b64encode(f"{email}:{api_token}".encode()).decode()
 
+    jira_url = f"{base_url}/rest/api/3/issue"
+    try:
+        jira_url = validate_url(jira_url)
+    except ValueError as e:
+        return {"success": False, "error": f"URL blocked: {e}"}
+
     req = urllib.request.Request(
-        f"{base_url}/rest/api/3/issue",
+        jira_url,
         data=payload,
         headers={
             "Content-Type": "application/json",

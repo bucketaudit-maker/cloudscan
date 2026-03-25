@@ -162,7 +162,13 @@ def get_db():
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
-        conn.create_function("REGEXP", 2, lambda pattern, string: bool(re.search(pattern, string or "")))
+        def _safe_regexp(pattern, string):
+            """REGEXP with timeout protection against catastrophic backtracking."""
+            try:
+                return bool(re.search(pattern, string or "", flags=0))
+            except (re.error, RecursionError):
+                return False
+        conn.create_function("REGEXP", 2, _safe_regexp)
         wrapper = _SqliteWrapper(conn)
 
     try:
