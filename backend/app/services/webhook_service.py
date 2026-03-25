@@ -14,6 +14,7 @@ import urllib.error
 from datetime import datetime
 
 from backend.app.models.database import WebhookStore
+from backend.app.utils.url_validation import validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,14 @@ def _send_webhook(webhook: dict, payload: dict):
         sig = hmac.new(webhook["secret"].encode("utf-8"), body, hashlib.sha256).hexdigest()
         headers["X-CloudScan-Signature"] = sig
 
-    req = urllib.request.Request(webhook["url"], data=body, headers=headers, method="POST")
+    try:
+        validated_url = validate_url(webhook["url"])
+    except ValueError as e:
+        logger.error(f"[Webhook] Blocked SSRF attempt for {webhook['name']}: {e}")
+        WebhookStore.increment_failure(webhook["id"])
+        return
+
+    req = urllib.request.Request(validated_url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             if 200 <= resp.status < 300:
@@ -85,7 +93,12 @@ def send_test(webhook: dict) -> dict:
         sig = hmac.new(webhook["secret"].encode("utf-8"), body, hashlib.sha256).hexdigest()
         headers["X-CloudScan-Signature"] = sig
 
-    req = urllib.request.Request(webhook["url"], data=body, headers=headers, method="POST")
+    try:
+        validated_url = validate_url(webhook["url"])
+    except ValueError as e:
+        return {"success": False, "error": f"URL blocked: {e}"}
+
+    req = urllib.request.Request(validated_url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return {"success": True, "status": resp.status}
