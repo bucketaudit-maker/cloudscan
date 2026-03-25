@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__, url_prefix="/api/v1")
 
+
+def _sanitize_query_params(qs: str) -> str:
+    """Redact sensitive values from query strings before logging."""
+    import re
+    return re.sub(r"(access_token|api_key|token|secret)=[^&]*", r"\1=REDACTED", qs, flags=re.IGNORECASE)
+
 # Global event queues for SSE subscribers
 _sse_subscribers: list[queue.Queue] = []
 _sse_lock = threading.Lock()
@@ -79,6 +85,15 @@ def _add_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
     return response
 
 
@@ -99,10 +114,11 @@ def _csrf_check():
         return
     # Validate CSRF token from header
     csrf_token = request.headers.get("X-CSRF-Token")
-    if csrf_token:
-        if not CsrfTokenStore.validate(csrf_token):
-            logger.warning("Invalid CSRF token from %s for %s", request.remote_addr, request.path)
-            # Don't block — just log for now (soft enforcement)
+    if not csrf_token:
+        return jsonify({"error": "Missing CSRF token"}), 403
+    if not CsrfTokenStore.validate(csrf_token):
+        logger.warning("Invalid CSRF token from %s for %s", request.remote_addr, request.path)
+        return jsonify({"error": "Invalid CSRF token"}), 403
     return
 
 
@@ -121,7 +137,7 @@ def _log_request(response):
         user_id=user_id,
         endpoint=request.path,
         method=request.method,
-        query_params=request.query_string.decode("utf-8", errors="replace")[:500],
+        query_params=_sanitize_query_params(request.query_string.decode("utf-8", errors="replace")[:500]),
         ip_address=request.remote_addr or "",
         user_agent=(request.user_agent.string or "")[:200],
         response_status=response.status_code,
@@ -446,11 +462,21 @@ def get_pricing():
 @api.route("/auth/upgrade", methods=["POST"])
 @auth_required_strict
 def upgrade_tier():
-    """Change the authenticated user's tier."""
+    """Change a user's tier. Only admins can upgrade to premium/enterprise."""
     data = request.get_json(force=True)
     new_tier = data.get("tier", "").lower()
     if new_tier not in ("free", "premium", "enterprise"):
         return jsonify({"error": "Invalid tier. Must be free, premium, or enterprise."}), 400
+
+    # Only allow self-service downgrade to free; upgrades require org admin/owner role
+    if new_tier != "free":
+        with get_db() as db:
+            admin_role = db.execute(
+                "SELECT role FROM org_members WHERE user_id=%s AND role IN ('owner','admin') LIMIT 1",
+                (g.user_id,),
+            ).fetchone()
+            if not admin_role:
+                return jsonify({"error": "Tier upgrades require admin approval or a valid payment"}), 403
 
     with get_db() as db:
         db.execute("UPDATE users SET tier=%s WHERE id=%s", (new_tier, g.user_id))
@@ -528,11 +554,19 @@ def search_files():
     per_page = min(request.args.get("per_page", 50, type=int), 200)
     min_size = request.args.get("min_size", type=int)
     max_size = request.args.get("max_size", type=int)
+    if min_size is not None and min_size < 0:
+        return jsonify({"error": "min_size must be non-negative"}), 400
+    if max_size is not None and max_size < 0:
+        return jsonify({"error": "max_size must be non-negative"}), 400
+    if min_size is not None and max_size is not None and min_size > max_size:
+        return jsonify({"error": "min_size must not exceed max_size"}), 400
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
     regex = request.args.get("regex", "").strip()
 
     if regex:
+        if len(regex) > 500:
+            return jsonify({"error": "Regex pattern too long (max 500 characters)"}), 400
         try:
             _re.compile(regex)
         except _re.error:
@@ -573,6 +607,8 @@ def export_files():
     regex = request.args.get("regex", "").strip()
 
     if regex:
+        if len(regex) > 500:
+            return jsonify({"error": "Regex pattern too long (max 500 characters)"}), 400
         try:
             _re.compile(regex)
         except _re.error:
@@ -703,6 +739,12 @@ def file_preview(file_id):
     url = f.get("url", "")
     if not url:
         return jsonify({"file_id": file_id, "preview_type": "error", "error": "No URL available"})
+
+    from backend.app.utils.url_validation import validate_url
+    try:
+        url = validate_url(url)
+    except ValueError as e:
+        return jsonify({"file_id": file_id, "preview_type": "error", "error": f"URL blocked: {e}"}), 400
 
     try:
         req = urllib.request.Request(url, headers={"Range": "bytes=0-4095"})
@@ -1116,8 +1158,11 @@ def create_webhook():
 
     if not name or not url:
         return jsonify({"error": "name and url are required"}), 400
-    if not url.startswith("http"):
-        return jsonify({"error": "url must start with http:// or https://"}), 400
+    from backend.app.utils.url_validation import validate_url
+    try:
+        url = validate_url(url)
+    except ValueError as e:
+        return jsonify({"error": f"Invalid webhook URL: {e}"}), 400
 
     wh = WebhookStore.create(g.user_id, name, url, secret, event_types)
     try:

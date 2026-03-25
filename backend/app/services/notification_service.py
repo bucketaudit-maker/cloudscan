@@ -14,6 +14,7 @@ from datetime import datetime
 from backend.app.models.database import (
     NotificationStore, NotificationPrefStore, SlackConfigStore,
 )
+from backend.app.utils.url_validation import validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,12 @@ def _send_slack_message(config: dict, title: str, body: str, severity: str, link
 
     webhook_url = config.get("webhook_url")
     if not webhook_url:
+        return
+
+    try:
+        webhook_url = validate_url(webhook_url)
+    except ValueError as e:
+        logger.error(f"[Notify] Slack webhook URL blocked (SSRF): {e}")
         return
 
     req = urllib.request.Request(
