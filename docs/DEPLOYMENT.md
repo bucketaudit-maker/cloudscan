@@ -1,5 +1,14 @@
 # CloudScan — Deployment Guide
 
+## Overview
+
+CloudScan consists of several components:
+- **API Server**: Flask REST API (80+ endpoints) serving the backend logic
+- **Frontend**: React SPA served via Nginx or Vite dev server
+- **Database**: PostgreSQL (production) or SQLite (development)
+- **Monitor Worker**: Background scheduler for watchlist scans and alert generation
+- **AI Provider**: Optional connection to Anthropic, OpenAI, Google Gemini, or Ollama
+
 ## Database (PostgreSQL)
 
 CloudScan uses **PostgreSQL** by default for both local and production. SQLite is only used when `DATABASE_URL` is set to a `sqlite:///` URL (e.g. in tests).
@@ -7,6 +16,7 @@ CloudScan uses **PostgreSQL** by default for both local and production. SQLite i
 - **Local**: You can keep `RUN_DB_MIGRATIONS_ON_STARTUP=true` for convenience.
 - **Production**: Set `RUN_DB_MIGRATIONS_ON_STARTUP=false` and run migrations as an explicit deploy step (`alembic upgrade head`).
 - **Manual**: Create a database, set `DATABASE_URL`, run `cd backend && alembic upgrade head`, then start the API.
+- **Schema**: 30+ tables covering users, buckets, files, scans, watchlists, alerts, organizations, compliance, drift detection, remediations, notifications, webhooks, audit logs, and more.
 
 ## Environment URLs (Local vs Production)
 
@@ -38,6 +48,8 @@ cp .env.example .env
 #    - Adjust CORS_ORIGINS to your domain
 #    - Set RUN_DB_MIGRATIONS_ON_STARTUP=false
 #    - Set ENABLE_MONITOR_SCHEDULER=false on API containers
+#    - Configure AI provider (optional): ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
+#    - Configure Slack webhook URL for notifications (optional)
 
 # 3. Build and start
 docker compose up -d --build
@@ -267,3 +279,60 @@ docker compose logs -f backend
 - **Prometheus**: Scrape `/metrics` endpoint (add with flask-prometheus)
 - **Grafana**: Dashboard for request rates, scan progress, DB size
 - **Sentry**: Error tracking for production
+
+---
+
+## Security Configuration
+
+### CSRF Protection
+
+CloudScan enforces CSRF tokens on all POST/PUT/DELETE requests. Clients must:
+1. Fetch a token from `GET /api/v1/csrf-token`
+2. Include it as `X-CSRF-Token` header on state-changing requests
+
+Tokens are single-use and tied to the user session.
+
+### Two-Factor Authentication (2FA)
+
+2FA uses TOTP (Time-based One-Time Passwords). Users enable it via `/auth/2fa/setup` and `/auth/2fa/confirm`. Once enabled, login requires a 2FA code via `/auth/2fa/verify`.
+
+### Security Headers
+
+The API server sets the following security headers on all responses:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Content-Security-Policy` (restrictive policy)
+- `Permissions-Policy` (disables geolocation, camera, microphone)
+
+---
+
+## AI Provider Configuration
+
+CloudScan supports multiple AI providers for file classification, risk scoring, natural language search, and report generation.
+
+| Provider | Environment Variable | Models |
+|----------|---------------------|--------|
+| Anthropic Claude | `ANTHROPIC_API_KEY` | claude-haiku (fast), claude-sonnet (quality) |
+| OpenAI | `OPENAI_API_KEY` | GPT-3.5 (fast), GPT-4 (quality) |
+| Google Gemini | `GOOGLE_API_KEY` | Gemini Pro |
+| Ollama (local) | `OLLAMA_URL` | Any local model |
+
+Set the desired API key in `.env`. Users can switch providers at runtime via `POST /ai/provider`.
+
+---
+
+## Webhook & Notification Setup
+
+### Webhooks
+Configure webhooks via the API or UI to receive alerts at external HTTP endpoints. Webhooks support:
+- HMAC-SHA256 signature verification
+- Severity-based event filtering
+- Auto-disable after 10 consecutive failures
+
+### Slack Notifications
+Configure Slack integration via `POST /notifications/slack` with a webhook URL. Test delivery with `POST /notifications/slack/test`.
+
+### Notification Preferences
+Users can configure per-channel notification preferences including minimum severity thresholds via `PUT /notifications/prefs`.
