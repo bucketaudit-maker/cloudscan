@@ -267,9 +267,9 @@ export default function App() {
   const loadReportSchedules = async () => { const d = await apiFetch('/reports/schedules'); if (Array.isArray(d)) setReportSchedules(d) }
   const loadIntegrations = async () => { const d = await apiFetch('/integrations'); if (Array.isArray(d)) setIntegrations(d) }
   // Sprint 5 data loaders
-  const loadTags = async()=>{const d=await apiFetch('/tags');if(Array.isArray(d))setTags(d)}
-  const loadBookmarkIds = async()=>{const d=await apiFetch('/bookmarks/ids');if(Array.isArray(d))setBookmarkIds(d)}
-  const loadScanSchedules = async()=>{const d=await apiFetch('/scans/schedules');if(Array.isArray(d))setScanSchedules(d)}
+  const loadTags = async()=>{const d=await apiFetch('/tags');if(d?.items)setTags(d.items);else if(Array.isArray(d))setTags(d)}
+  const loadBookmarkIds = async()=>{const d=await apiFetch('/bookmarks/ids');if(d?.bucket_ids)setBookmarkIds(d.bucket_ids);else if(Array.isArray(d))setBookmarkIds(d)}
+  const loadScanSchedules = async()=>{const d=await apiFetch('/scans/schedules');if(d?.items)setScanSchedules(d.items);else if(Array.isArray(d))setScanSchedules(d)}
   const loadAuditLog = async(p=1)=>{const d=await apiFetch(`/audit-log?page=${p}&per_page=50`);if(d?.items)setAuditLog(d)}
   // Sprint 6 loaders
   const load2faStatus = async()=>{const d=await apiFetch('/auth/2fa/status');if(d)setTwoFaStatus(d)}
