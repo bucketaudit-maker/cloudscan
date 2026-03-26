@@ -1,4 +1,6 @@
-# CloudScan API Documentation
+# CloudScan API — Quick Reference
+
+> **Full API documentation** with request/response examples: [`../API.md`](../API.md)
 
 Base URL: `http://localhost:8000/api/v1`
 
@@ -23,301 +25,256 @@ Generated on registration. Does not expire.
 GET /api/v1/files?q=backup&access_token=cs_your_api_key_here
 ```
 
+### CSRF Tokens
+
+All state-changing requests (POST, PUT, DELETE) require a CSRF token:
+
+```bash
+# 1. Fetch a single-use CSRF token
+curl http://localhost:8000/api/v1/csrf-token
+
+# 2. Include it in your request
+curl -X POST http://localhost:8000/api/v1/scans \
+  -H "Authorization: Bearer ..." \
+  -H "X-CSRF-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"keywords": ["backup"]}'
+```
+
 ## Rate Limits
 
-| Tier | Requests/Day | Price |
-|------|-------------|-------|
-| Free | 100 | $0 |
-| Premium | 5,000 | Contact |
-| Enterprise | 50,000 | Contact |
+| Tier | Requests/Day | Scans/Day | Schedules | Keywords | Concurrent Scans | Webhooks | AI |
+|------|-------------|-----------|-----------|----------|------------------|----------|----|
+| Free | 100 | 3 | 1 | 10 | 1 | 0 | No |
+| Premium | 5,000 | 50 | 10 | 100 | 3 | 5 | Yes |
+| Enterprise | 50,000 | Unlimited | Unlimited | Unlimited | 10 | Unlimited | Yes |
 
 Rate limit resets daily at midnight UTC. When exceeded, responses return `429 Too Many Requests` with a `reset_at` timestamp.
 
 ---
 
-## Endpoints
+## Endpoint Summary (80+)
 
-### Health
+### Public Endpoints (No Auth)
 
-#### `GET /health`
-```json
-{ "status": "ok", "timestamp": "2025-03-04T12:00:00", "version": "1.0.0" }
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/stats` | Aggregate statistics |
+| `GET` | `/providers` | Cloud provider list |
+| `GET` | `/events/scans` | SSE real-time stream |
+| `GET` | `/ai/status` | AI provider status |
+| `GET` | `/csrf-token` | Get CSRF token |
+| `GET` | `/pricing` | View pricing tiers |
 
----
+### Authentication & Users
 
-### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/register` | Create account |
+| `POST` | `/auth/login` | Login (supports 2FA) |
+| `GET` | `/auth/me` | Current user profile |
+| `POST` | `/auth/forgot-password` | Request password reset |
+| `POST` | `/auth/reset-password` | Reset password with token |
+| `POST` | `/auth/rotate-key` | Regenerate API key |
+| `PUT` | `/auth/settings` | Update username/password |
+| `POST` | `/auth/upgrade` | Upgrade tier |
+| `GET` | `/auth/tier-limits` | View tier limits |
 
-#### `POST /auth/register`
-Create an account. Returns JWT token and API key.
+### Two-Factor Authentication
 
-**Body:**
-```json
-{
-  "email": "user@example.com",
-  "username": "myuser",
-  "password": "minimum8chars"
-}
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/2fa/setup` | Initialize TOTP setup |
+| `POST` | `/auth/2fa/confirm` | Confirm 2FA enrollment |
+| `POST` | `/auth/2fa/verify` | Verify 2FA code on login |
+| `POST` | `/auth/2fa/disable` | Disable 2FA |
+| `GET` | `/auth/2fa/status` | Check 2FA status |
 
-**Response (201):**
-```json
-{
-  "token": "eyJhbG...",
-  "api_key": "cs_a1b2c3...",
-  "user": { "id": 1, "email": "user@example.com", "username": "myuser", "tier": "free" }
-}
-```
+### File Search & Discovery
 
-#### `POST /auth/login`
-**Body:**
-```json
-{ "email": "user@example.com", "password": "minimum8chars" }
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/files` | Full-text / regex file search |
+| `GET` | `/files/export` | Export results (CSV, JSON, PDF, SARIF) |
+| `GET` | `/files/random` | Random interesting files |
+| `GET` | `/files/:id/preview` | Preview file content (first 4KB) |
 
-**Response (200):**
-```json
-{
-  "token": "eyJhbG...",
-  "user": { "id": 1, "email": "user@example.com", "username": "myuser", "tier": "free", "api_key": "cs_..." }
-}
-```
+### Saved Searches
 
-#### `GET /auth/me` (requires auth)
-Returns current authenticated user profile.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/searches/saved` | Save a search query |
+| `GET` | `/searches/saved` | List saved searches |
+| `DELETE` | `/searches/saved/:id` | Delete saved search |
 
----
+### Buckets & Tags
 
-### File Search
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/buckets` | List discovered buckets |
+| `GET` | `/buckets/:id` | Bucket detail + file listing |
+| `GET` | `/buckets/:id/tags` | Get bucket tags |
+| `POST` | `/buckets/:id/tags` | Add/manage bucket tags |
 
-#### `GET /files`
-Full-text search across all indexed files.
+### Bookmarks
 
-**Parameters:**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/bookmarks` | Bookmark a file/bucket |
+| `GET` | `/bookmarks` | List bookmarks |
+| `GET` | `/bookmarks/check` | Check if item is bookmarked |
+| `GET` | `/bookmarks/ids` | Get all bookmark IDs |
 
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `q` | string | * | Search query (FTS5 syntax, supports NOT) |
-| `ext` | string | | Comma-separated extensions: `sql,csv,json` |
-| `exclude_ext` | string | | Extensions to exclude: `log,txt` |
-| `provider` | string | | Filter by provider: `aws`, `azure`, `gcp`, `digitalocean`, `alibaba` |
-| `bucket` | string | | Filter by bucket name (partial match) |
-| `min_size` | integer | | Minimum file size in bytes |
-| `max_size` | integer | | Maximum file size in bytes |
-| `sort` | string | | Sort order: `relevance`, `size_asc`, `size_desc`, `newest`, `oldest`, `filename` |
-| `page` | integer | | Page number (default: 1) |
-| `per_page` | integer | | Results per page (default: 50, max: 200) |
+### Statistics & Analytics
 
-*At least one of `q`, `ext`, or `provider` is required.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/stats` | Summary statistics |
+| `GET` | `/stats/timeline` | Discovery timeline (daily) |
+| `GET` | `/stats/breakdown` | Risk/provider/classification breakdown |
+| `GET` | `/dashboard/executive` | Executive dashboard |
+| `GET` | `/dashboard/risk-trends` | Risk trend analysis |
+| `GET` | `/dashboard/remediation-sla` | Remediation SLA metrics |
 
-**Response:**
-```json
-{
-  "items": [
-    {
-      "id": 1,
-      "bucket_id": 5,
-      "filepath": "backups/database.sql",
-      "filename": "database.sql",
-      "extension": "sql",
-      "size_bytes": 52428800,
-      "last_modified": "2025-01-15T08:30:00",
-      "url": "https://bucket.s3.amazonaws.com/backups/database.sql",
-      "bucket_name": "company-backup-prod",
-      "bucket_url": "https://company-backup-prod.s3.amazonaws.com",
-      "region": "us-east-1",
-      "provider_name": "aws",
-      "provider_display": "Amazon Web Services"
-    }
-  ],
-  "total": 185,
-  "page": 1,
-  "per_page": 50,
-  "query": "database",
-  "response_time_ms": 6
-}
-```
+### Scans & Scheduling
 
-**Examples:**
-```bash
-# Search for SQL backups
-GET /files?q=backup.sql&ext=sql,gz
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/scans` | Start discovery scan |
+| `GET` | `/scans` | List scan history |
+| `GET` | `/scans/:id` | Scan job detail |
+| `POST` | `/scans/:id/cancel` | Cancel running scan |
+| `GET` | `/scans/debug` | Debug scan status |
+| `POST` | `/scans/schedules` | Create recurring schedule |
+| `GET` | `/scans/schedules` | List schedules |
+| `GET` | `/scans/schedules/:id` | Schedule detail |
+| `PUT` | `/scans/schedules/:id` | Update schedule |
+| `DELETE` | `/scans/schedules/:id` | Delete schedule |
+| `POST` | `/scans/schedules/:id/toggle` | Enable/disable schedule |
+| `POST` | `/scans/schedules/:id/run` | Manually trigger schedule |
 
-# Find credentials in AWS
-GET /files?q=credentials&provider=aws
+### Monitoring — Watchlists
 
-# Large files only
-GET /files?q=database&min_size=10000000&sort=size_desc
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/monitor/watchlists` | Create watchlist |
+| `GET` | `/monitor/watchlists` | List watchlists |
+| `GET` | `/monitor/watchlists/:id` | Watchlist detail + assets |
+| `PUT` | `/monitor/watchlists/:id` | Update watchlist |
+| `DELETE` | `/monitor/watchlists/:id` | Delete watchlist |
+| `POST` | `/monitor/watchlists/:id/scan` | Trigger watchlist scan |
 
-# Exclude log files
-GET /files?q=config&exclude_ext=log,txt
-```
+### Monitoring — Alerts
 
-#### `GET /files/random`
-Returns random files from the index. Useful for discovery.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/monitor/alerts` | List alerts (filter by severity/unread) |
+| `POST` | `/monitor/alerts/:id/read` | Mark alert as read |
+| `POST` | `/monitor/alerts/read-all` | Mark all alerts as read |
+| `POST` | `/monitor/alerts/:id/resolve` | Resolve alert |
+| `POST` | `/monitor/alerts/bulk-resolve` | Bulk resolve alerts |
+| `POST` | `/monitor/alerts/bulk-read` | Bulk mark as read |
+| `GET` | `/monitor/dashboard` | Monitoring summary |
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `count` | integer | 20 | Number of files (max: 100) |
+### Webhooks
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/monitor/webhooks` | Create webhook |
+| `GET` | `/monitor/webhooks` | List webhooks |
+| `PUT` | `/monitor/webhooks/:id` | Update webhook |
+| `DELETE` | `/monitor/webhooks/:id` | Delete webhook |
+| `POST` | `/monitor/webhooks/:id/test` | Test webhook delivery |
 
-### Buckets
+### Notifications
 
-#### `GET /buckets`
-List discovered buckets with optional filtering.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/notifications` | Get notifications |
+| `GET` | `/notifications/unread-count` | Unread count |
+| `POST` | `/notifications/:id/read` | Mark as read |
+| `POST` | `/notifications/read-all` | Mark all as read |
+| `GET` | `/notifications/prefs` | Get notification preferences |
+| `PUT` | `/notifications/prefs` | Update preferences |
+| `POST` | `/notifications/slack` | Configure Slack |
+| `DELETE` | `/notifications/slack` | Remove Slack config |
+| `POST` | `/notifications/slack/test` | Test Slack integration |
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `provider` | string | Filter by provider name |
-| `status` | string | Filter: `open`, `closed`, `partial` |
-| `search` | string | Search bucket names |
-| `page` | integer | Page number |
-| `per_page` | integer | Results per page (max: 200) |
+### AI Features
 
-#### `GET /buckets/:id`
-Bucket details with paginated file listing.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/ai/status` | AI provider status and capabilities |
+| `POST` | `/ai/provider` | Switch AI provider |
+| `POST` | `/ai/classify/:bucket_id` | Classify bucket files by sensitivity |
+| `GET` | `/ai/classifications` | Get all AI classifications |
+| `POST` | `/ai/risk/:bucket_id` | Compute bucket risk score |
+| `POST` | `/ai/search` | Natural language search |
+| `POST` | `/ai/report` | Generate AI security report |
+| `POST` | `/ai/suggest-keywords` | AI keyword suggestions |
+| `POST` | `/ai/prioritize-alerts` | AI alert prioritization |
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `page` | integer | File listing page |
-| `per_page` | integer | Files per page (max: 500) |
+### Organizations
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/orgs` | Create organization |
+| `GET` | `/orgs` | List organizations |
+| `GET` | `/orgs/:id` | Organization detail |
+| `PUT` | `/orgs/:id` | Update organization |
+| `POST` | `/orgs/:id/switch` | Switch active org |
+| `POST` | `/orgs/:id/invite` | Invite user by email |
+| `POST` | `/orgs/accept-invite` | Accept invitation |
+| `DELETE` | `/orgs/:id/members/:uid` | Remove member |
+| `PUT` | `/orgs/:id/members/:uid` | Update member role |
 
-### Statistics
+### Reports & Compliance
 
-#### `GET /stats`
-Database-wide statistics. No authentication required.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/reports/generate` | Generate report (security/compliance/executive) |
+| `GET` | `/reports` | List generated reports |
+| `GET` | `/reports/:id` | Report detail |
+| `DELETE` | `/reports/:id` | Delete report |
 
-**Response:**
-```json
-{
-  "total_files": 2540,
-  "total_buckets": 28,
-  "open_buckets": 24,
-  "total_size_bytes": 63294817280,
-  "providers": [
-    { "name": "aws", "display_name": "Amazon Web Services", "bucket_count": 12, "file_count": 1523 }
-  ],
-  "top_extensions": [
-    { "extension": "json", "count": 482 }
-  ],
-  "recent_buckets": [...]
-}
-```
+### Drift Detection
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/drift/diffs` | List configuration diffs |
+| `GET` | `/drift/diffs/summary` | Diff summary |
+| `POST` | `/drift/diffs/:id/review` | Mark diff as reviewed |
+| `GET` | `/drift/buckets/:id/history` | Bucket change history |
+| `GET` | `/drift/scans/:job_id/diffs` | Diffs from a specific scan |
 
-### Scans
+### Custom Alert Rules
 
-#### `POST /scans` (requires auth)
-Start a discovery scan. Results stream via SSE.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/alert-rules` | Create alert rule |
+| `GET` | `/alert-rules` | List rules |
+| `GET` | `/alert-rules/:id` | Rule detail |
+| `PUT` | `/alert-rules/:id` | Update rule |
+| `DELETE` | `/alert-rules/:id` | Delete rule |
+| `POST` | `/alert-rules/:id/toggle` | Enable/disable rule |
+| `POST` | `/alert-rules/test` | Test rule against sample data |
 
-**Body:**
-```json
-{
-  "keywords": ["backup", "credentials", "secret"],
-  "companies": ["acme-corp"],
-  "providers": ["aws", "gcp"],
-  "max_names": 1000
-}
-```
+### Remediation
 
-**Response (202):**
-```json
-{
-  "id": 1,
-  "job_type": "discovery",
-  "status": "pending",
-  "config": "{...}",
-  "created_at": "2025-03-04T12:00:00"
-}
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/remediations/bulk-status` | Bulk status update |
+| `POST` | `/remediations/bulk-assign` | Bulk assign to user |
+| `POST` | `/remediations/bulk-close` | Bulk close remediations |
 
-#### `GET /scans/:id` (requires auth)
-Get scan job status and progress.
+### Audit & Activity
 
-#### `GET /scans` (requires auth)
-List recent scan jobs (last 50).
-
-#### `POST /scans/:id/cancel` (requires auth)
-Cancel a running scan.
-
----
-
-### Real-Time Events (SSE)
-
-#### `GET /events/scans`
-Server-Sent Events stream for real-time scan updates.
-
-**Event Types:**
-
-| Event | Description |
-|-------|-------------|
-| `connected` | Initial connection confirmation |
-| `scan_started` | Scan job has begun |
-| `progress` | Scan progress update (every 50 checks) |
-| `bucket_found` | A bucket was discovered |
-| `scan_complete` | Scan finished |
-| `error` | Scan error occurred |
-
-**Example (JavaScript):**
-```javascript
-const es = new EventSource('/api/v1/events/scans');
-
-es.addEventListener('progress', (e) => {
-  const data = JSON.parse(e.data);
-  console.log(`${data.names_checked}/${data.names_total} checked, ${data.buckets_open} open`);
-});
-
-es.addEventListener('bucket_found', (e) => {
-  const { bucket } = JSON.parse(e.data);
-  console.log(`Found: ${bucket.provider}://${bucket.name} [${bucket.status}]`);
-});
-
-es.addEventListener('scan_complete', (e) => {
-  console.log('Scan done:', JSON.parse(e.data).stats);
-  es.close();
-});
-```
-
-**Progress payload:**
-```json
-{
-  "job_id": 1,
-  "phase": "scanning",
-  "provider": "aws",
-  "names_total": 3000,
-  "names_checked": 1500,
-  "buckets_found": 12,
-  "buckets_open": 4,
-  "files_indexed": 847,
-  "current_bucket": "company-backup-prod",
-  "errors": 3,
-  "elapsed_ms": 15000
-}
-```
-
----
-
-### Providers
-
-#### `GET /providers`
-List supported cloud providers.
-
-**Response:**
-```json
-{
-  "items": [
-    { "id": 1, "name": "aws", "display_name": "Amazon Web Services", "bucket_term": "bucket" },
-    { "id": 2, "name": "azure", "display_name": "Microsoft Azure", "bucket_term": "container" },
-    { "id": 3, "name": "gcp", "display_name": "Google Cloud Platform", "bucket_term": "bucket" },
-    { "id": 4, "name": "digitalocean", "display_name": "DigitalOcean", "bucket_term": "space" },
-    { "id": 5, "name": "alibaba", "display_name": "Alibaba Cloud", "bucket_term": "bucket" }
-  ]
-}
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/activity` | User activity feed |
+| `GET` | `/audit-log` | Comprehensive audit log |
+| `GET` | `/audit-log/entity/:type/:id` | Entity-specific audit trail |
 
 ---
 
@@ -332,8 +289,34 @@ All errors follow this format:
 |--------|---------|
 | 400 | Bad request (missing/invalid params) |
 | 401 | Authentication required or invalid |
-| 403 | Account disabled |
+| 403 | Account disabled or missing CSRF token |
 | 404 | Resource not found |
 | 409 | Conflict (duplicate email/username) |
 | 429 | Rate limit exceeded |
 | 500 | Internal server error |
+
+---
+
+## Real-Time Events (SSE)
+
+```
+GET /events/scans
+```
+
+| Event | Description |
+|-------|-------------|
+| `connected` | Connection established |
+| `scan_started` | Scan job began |
+| `progress` | Periodic progress update |
+| `bucket_found` | New bucket discovered |
+| `scan_complete` | Scan finished |
+| `scan_cancelled` | Scan was cancelled |
+| `error` | Scan error |
+| `monitor_progress` | Watchlist scan progress |
+| `monitor_complete` | Watchlist scan finished |
+
+Keepalive: `: keepalive\n\n` every 15 seconds.
+
+---
+
+For complete request/response examples, authentication details, data objects, and webhook payload formats, see the **[full API reference](../API.md)**.
