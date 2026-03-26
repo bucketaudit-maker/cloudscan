@@ -12,12 +12,28 @@ const IS = {width:'100%' as const,boxSizing:'border-box' as const,background:'va
 
 let _token: string | null = null
 try { _token = localStorage.getItem('cs_token') } catch{}
+let _csrfToken: string | null = null
+const fetchCsrfToken = async () => {
+  if(_csrfToken) return _csrfToken
+  try {
+    const headers: any = {'Content-Type':'application/json'}
+    if(_token) headers['Authorization'] = `Bearer ${_token}`
+    const r = await fetch(`${API}/csrf-token`,{headers})
+    if(r.ok) { const d = await r.json(); _csrfToken = d.csrf_token }
+  } catch{}
+  return _csrfToken
+}
 const apiFetch = async (ep:string, opts:any={}) => {
   try {
+    const method = (opts.method || 'GET').toUpperCase()
     const headers: any = {'Content-Type':'application/json', ...opts.headers}
     if(_token) headers['Authorization'] = `Bearer ${_token}`
+    if(['POST','PUT','DELETE'].includes(method)) {
+      const csrf = await fetchCsrfToken()
+      if(csrf) { headers['X-CSRF-Token'] = csrf; _csrfToken = null }
+    }
     const r = await fetch(`${API}${ep}`,{...opts, headers})
-    if(r.status === 401) { _token = null; try{localStorage.removeItem('cs_token')}catch{} }
+    if(r.status === 401) { _token = null; _csrfToken = null; try{localStorage.removeItem('cs_token')}catch{} }
     if(!r.ok) { try { return await r.json() } catch { return null } }
     return await r.json()
   } catch{ return null }
@@ -166,10 +182,10 @@ export default function App() {
   },[])
   useEffect(() => { const c = connectSSE(); return c }, [connectSSE])
 
-  const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r){setAuthError('Login failed');return}; if(r.requires_2fa){setTwoFaTempToken(r.temp_token);setAuthMode('login' as any);setAuthSuccess('Enter your 2FA code');setTwoFaCode('');return}; if(!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
-  const doVerify2fa = async() => { setAuthError(''); setAuthLoading(true); const r = await apiFetch('/auth/2fa/verify',{method:'POST',body:JSON.stringify({temp_token:twoFaTempToken,code:twoFaCode})}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Invalid code');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setTwoFaTempToken(''); setTwoFaCode(''); setAuthForm({email:'',username:'',password:''}) }
-  const doRegister = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/register',{method:'POST',body:JSON.stringify(authForm)}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Registration failed');return}; _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setShowWelcome(true); setView('home'); setAuthForm({email:'',username:'',password:''}) }
-  const doLogout = () => { _token=null; try{localStorage.removeItem('cs_token')}catch{}; setUser(null); setView('home'); setAuthMode('login'); setAuthError(''); setAuthSuccess('') }
+  const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r){setAuthError('Login failed');return}; if(r.requires_2fa){setTwoFaTempToken(r.temp_token);setAuthMode('login' as any);setAuthSuccess('Enter your 2FA code');setTwoFaCode('');return}; if(!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; _csrfToken=null; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
+  const doVerify2fa = async() => { setAuthError(''); setAuthLoading(true); const r = await apiFetch('/auth/2fa/verify',{method:'POST',body:JSON.stringify({temp_token:twoFaTempToken,code:twoFaCode})}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Invalid code');return}; _token=r.token; _csrfToken=null; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setTwoFaTempToken(''); setTwoFaCode(''); setAuthForm({email:'',username:'',password:''}) }
+  const doRegister = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/register',{method:'POST',body:JSON.stringify(authForm)}); setAuthLoading(false); if(!r||!r.token){setAuthError(r?.error||'Registration failed');return}; _token=r.token; _csrfToken=null; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setShowWelcome(true); setView('home'); setAuthForm({email:'',username:'',password:''}) }
+  const doLogout = () => { _token=null; _csrfToken=null; try{localStorage.removeItem('cs_token')}catch{}; setUser(null); setView('home'); setAuthMode('login'); setAuthError(''); setAuthSuccess('') }
   const doForgotPassword = async() => {
     setAuthError(''); setAuthSuccess(''); setAuthLoading(true)
     const r = await apiFetch('/auth/forgot-password',{method:'POST',body:JSON.stringify({email:authForm.email})})
@@ -188,7 +204,7 @@ export default function App() {
     const r = await apiFetch('/auth/reset-password',{method:'POST',body:JSON.stringify({token:resetToken,password:authForm.password})})
     setAuthLoading(false)
     if(!r||!r.token) { setAuthError(r?.error||'Reset failed'); return }
-    _token=r.token; try{localStorage.setItem('cs_token',r.token)}catch{}
+    _token=r.token; _csrfToken=null; try{localStorage.setItem('cs_token',r.token)}catch{}
     setAuthSuccess('Password reset successfully! Logging you in...')
     setTimeout(async()=>{ const me=await apiFetch('/auth/me'); if(me?.id)setUser(me); setView('home'); setAuthForm({email:'',username:'',password:''}); setResetToken(''); setAuthSuccess('') },1500)
   }
