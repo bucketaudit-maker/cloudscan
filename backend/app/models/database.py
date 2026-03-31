@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS buckets (
     metadata        TEXT,
     risk_score      INTEGER DEFAULT NULL,
     risk_level      TEXT DEFAULT NULL,
+    company_name    TEXT DEFAULT NULL,
     UNIQUE(provider_id, name, region)
 );
 
@@ -677,28 +678,31 @@ def init_db() -> str:
 class BucketStore:
     @staticmethod
     def upsert(provider_id: int, name: str, region: str, url: str,
-               status: str = "open", scan_time_ms: int = 0, metadata: dict = None) -> dict:
+               status: str = "open", scan_time_ms: int = 0, metadata: dict = None,
+               company_name: str = None) -> dict:
         with get_db() as db:
             now = datetime.now(timezone.utc).isoformat()
             sql = """
-                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata, company_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(provider_id, name, region) DO UPDATE SET
                     status=excluded.status, last_scanned=excluded.last_scanned,
                     scan_time_ms=excluded.scan_time_ms,
                     url=COALESCE(excluded.url, buckets.url),
-                    metadata=COALESCE(excluded.metadata, buckets.metadata)
+                    metadata=COALESCE(excluded.metadata, buckets.metadata),
+                    company_name=COALESCE(excluded.company_name, buckets.company_name)
             """ if settings.is_postgres else """
-                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata, company_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(provider_id, name, region) DO UPDATE SET
                     status=excluded.status, last_scanned=excluded.last_scanned,
                     scan_time_ms=excluded.scan_time_ms,
                     url=COALESCE(excluded.url, url),
-                    metadata=COALESCE(excluded.metadata, metadata)
+                    metadata=COALESCE(excluded.metadata, metadata),
+                    company_name=COALESCE(excluded.company_name, company_name)
             """
             db.execute(sql, (provider_id, name, region, url, status, now, now, scan_time_ms,
-                             json.dumps(metadata) if metadata else None))
+                             json.dumps(metadata) if metadata else None, company_name))
             row = db.execute(
                 "SELECT * FROM buckets WHERE provider_id=%s AND name=%s AND region=%s",
                 (provider_id, name, region),

@@ -134,7 +134,8 @@ class ScanService:
                 bucket = BucketStore.upsert(
                     provider_id=provider_id, name=result.name,
                     region=result.region, url=result.url,
-                    status=result.status, scan_time_ms=result.scan_time_ms)
+                    status=result.status, scan_time_ms=result.scan_time_ms,
+                    company_name=result.company_name or None)
                 if result.status == "open" and result.files:
                     count = FileStore.insert_batch(bucket["id"], result.files)
                     logger.info(f"[OPEN] {result.provider}://{result.name} — {count} files")
@@ -174,6 +175,7 @@ class ScanService:
                         "url": result.url, "status": result.status,
                         "file_count": result.file_count,
                         "scan_time_ms": result.scan_time_ms,
+                        "company_name": result.company_name or None,
                     }})
             except Exception as e:
                 logger.error(f"Error persisting {result.name}: {e}")
