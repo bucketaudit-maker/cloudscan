@@ -147,6 +147,7 @@ class BucketResult:
     files: list = field(default_factory=list)
     error: str = ""
     scan_time_ms: int = 0
+    company_name: str = ""
 
     def to_dict(self):
         return asdict(self)
@@ -180,9 +181,12 @@ def generate_bucket_names(
     keywords: list[str] = None,
     companies: list[str] = None,
     max_names: int = 5000,
-) -> list[str]:
-    """Generate candidate bucket names using multiple strategies."""
-    names = set()
+) -> dict[str, str]:
+    """Generate candidate bucket names using multiple strategies.
+
+    Returns a dict mapping bucket_name -> company_name (empty string if not company-derived).
+    """
+    names: dict[str, str] = {}
 
     # Strategy 1: Common word combinations
     for word in COMMON_WORDS[:25]:
@@ -190,7 +194,7 @@ def generate_bucket_names(
             if word == suffix:
                 continue
             for sep in SEPARATORS:
-                names.add(f"{word}{sep}{suffix}")
+                names.setdefault(f"{word}{sep}{suffix}", "")
 
     # Strategy 2: Keyword-based
     if keywords:
@@ -198,11 +202,11 @@ def generate_bucket_names(
             kw = kw.lower().strip()
             if not kw:
                 continue
-            names.add(kw)
+            names.setdefault(kw, "")
             for word in COMMON_WORDS:
                 for sep in SEPARATORS[:3]:
-                    names.add(f"{kw}{sep}{word}")
-                    names.add(f"{word}{sep}{kw}")
+                    names.setdefault(f"{kw}{sep}{word}", "")
+                    names.setdefault(f"{word}{sep}{kw}", "")
 
     # Strategy 3: Company name variants
     if companies:
@@ -210,20 +214,22 @@ def generate_bucket_names(
             c = re.sub(r"[^a-z0-9]", "-", company.lower().strip()).strip("-")
             if not c:
                 continue
-            names.add(c)
+            original = company.strip()
+            names[c] = original
             for suffix in SUFFIXES:
                 for sep in SEPARATORS[:3]:
-                    names.add(f"{c}{sep}{suffix}")
+                    names[f"{c}{sep}{suffix}"] = original
             # Common patterns: company-env, company-service-env
             for env in ["dev", "staging", "prod", "test"]:
-                names.add(f"{c}-{env}")
+                names[f"{c}-{env}"] = original
                 for svc in ["api", "web", "app", "data", "ml"]:
-                    names.add(f"{c}-{svc}-{env}")
+                    names[f"{c}-{svc}-{env}"] = original
 
     # Strategy 4: Random alphanumeric
     for _ in range(min(200, max_names // 20)):
         length = random.randint(6, 14)
-        names.add("".join(random.choices(string.ascii_lowercase + string.digits, k=length)))
+        rname = "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+        names.setdefault(rname, "")
 
     # Strategy 5: Broader synthetic patterns to better fill max_names, even without companies
     seeds = []
@@ -251,17 +257,18 @@ def generate_bucket_names(
         else:
             suffix_digits = random.randint(1, 9999)
             candidate = f"{a}{sep}{b}{suffix_digits}"
-        names.add(candidate)
+        names.setdefault(candidate, "")
 
     # Validate bucket names (S3 rules: 3-63 chars, lowercase, alphanumeric + hyphen + dot)
-    valid = set()
-    for name in names:
-        name = re.sub(r"[^a-z0-9.\-]", "-", name.lower())
+    valid: dict[str, str] = {}
+    for raw_name, company in names.items():
+        name = re.sub(r"[^a-z0-9.\-]", "-", raw_name.lower())
         name = re.sub(r"-+", "-", name).strip("-.")
         if 3 <= len(name) <= 63 and not name.startswith("xn--") and ".." not in name:
-            valid.add(name)
+            valid.setdefault(name, company)
 
-    result = list(valid)[:max_names]
+    # Truncate to max_names
+    result = dict(list(valid.items())[:max_names])
     logger.info(f"Generated {len(result)} valid bucket name candidates")
     return result
 
@@ -516,7 +523,8 @@ class BucketScanner:
         if on_progress:
             on_progress(self.progress)
 
-        names = generate_bucket_names(keywords=keywords, companies=companies, max_names=max_names)
+        name_company_map = generate_bucket_names(keywords=keywords, companies=companies, max_names=max_names)
+        names = list(name_company_map.keys())
         start_time = time.monotonic()
 
         self.progress.names_total = sum(
@@ -544,6 +552,8 @@ class BucketScanner:
             # Process with bounded concurrency
             for coro in asyncio.as_completed(tasks):
                 result = await coro
+                # Attach company name from the generation map
+                result.company_name = name_company_map.get(result.name, "")
                 self.progress.names_checked += 1
                 self.progress.elapsed_ms = int((time.monotonic() - start_time) * 1000)
 

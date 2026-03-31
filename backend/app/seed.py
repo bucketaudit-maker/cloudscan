@@ -47,40 +47,41 @@ def seed():
     print("  Created demo user: demo@cloudscan.io / demo1234")
 
     # Realistic buckets across providers
+    # (provider_id, name, region, url, status, company_name)
     buckets_data = [
         # AWS S3
-        (1, "company-backup-prod", "us-east-1", "https://company-backup-prod.s3.amazonaws.com", "open"),
-        (1, "webapp-static-assets", "us-west-2", "https://webapp-static-assets.s3.us-west-2.amazonaws.com", "open"),
-        (1, "data-lake-analytics", "eu-west-1", "https://data-lake-analytics.s3.eu-west-1.amazonaws.com", "open"),
-        (1, "staging-db-exports", "us-east-1", "https://staging-db-exports.s3.amazonaws.com", "open"),
-        (1, "media-uploads-2024", "ap-southeast-1", "https://media-uploads-2024.s3.ap-southeast-1.amazonaws.com", "open"),
-        (1, "internal-docs-share", "us-east-1", "https://internal-docs-share.s3.amazonaws.com", "closed"),
-        (1, "terraform-state-prod", "eu-central-1", "https://terraform-state-prod.s3.eu-central-1.amazonaws.com", "open"),
-        (1, "customer-data-export", "us-west-1", "https://customer-data-export.s3.us-west-1.amazonaws.com", "closed"),
-        (1, "dev-test-artifacts", "us-east-2", "https://dev-test-artifacts.s3.us-east-2.amazonaws.com", "open"),
-        (1, "log-archive-2025", "us-east-1", "https://log-archive-2025.s3.amazonaws.com", "open"),
-        (1, "ml-models-registry", "us-west-2", "https://ml-models-registry.s3.us-west-2.amazonaws.com", "open"),
-        (1, "ci-cd-artifacts", "us-east-1", "https://ci-cd-artifacts.s3.amazonaws.com", "open"),
+        (1, "company-backup-prod", "us-east-1", "https://company-backup-prod.s3.amazonaws.com", "open", "Acme Corp"),
+        (1, "webapp-static-assets", "us-west-2", "https://webapp-static-assets.s3.us-west-2.amazonaws.com", "open", None),
+        (1, "data-lake-analytics", "eu-west-1", "https://data-lake-analytics.s3.eu-west-1.amazonaws.com", "open", "Globex Inc"),
+        (1, "staging-db-exports", "us-east-1", "https://staging-db-exports.s3.amazonaws.com", "open", None),
+        (1, "media-uploads-2024", "ap-southeast-1", "https://media-uploads-2024.s3.ap-southeast-1.amazonaws.com", "open", None),
+        (1, "internal-docs-share", "us-east-1", "https://internal-docs-share.s3.amazonaws.com", "closed", "Acme Corp"),
+        (1, "terraform-state-prod", "eu-central-1", "https://terraform-state-prod.s3.eu-central-1.amazonaws.com", "open", "Initech"),
+        (1, "customer-data-export", "us-west-1", "https://customer-data-export.s3.us-west-1.amazonaws.com", "closed", "Globex Inc"),
+        (1, "dev-test-artifacts", "us-east-2", "https://dev-test-artifacts.s3.us-east-2.amazonaws.com", "open", None),
+        (1, "log-archive-2025", "us-east-1", "https://log-archive-2025.s3.amazonaws.com", "open", None),
+        (1, "ml-models-registry", "us-west-2", "https://ml-models-registry.s3.us-west-2.amazonaws.com", "open", "Initech"),
+        (1, "ci-cd-artifacts", "us-east-1", "https://ci-cd-artifacts.s3.amazonaws.com", "open", None),
         # Azure Blob
-        (2, "corpbackups", "", "https://corpbackups.blob.core.windows.net", "open"),
-        (2, "websiteassets", "", "https://websiteassets.blob.core.windows.net", "open"),
-        (2, "logstorage2024", "", "https://logstorage2024.blob.core.windows.net", "open"),
-        (2, "devtestdata", "", "https://devtestdata.blob.core.windows.net", "closed"),
-        (2, "publicmedia", "", "https://publicmedia.blob.core.windows.net", "open"),
-        (2, "azuremldata", "", "https://azuremldata.blob.core.windows.net", "open"),
+        (2, "corpbackups", "", "https://corpbackups.blob.core.windows.net", "open", "Acme Corp"),
+        (2, "websiteassets", "", "https://websiteassets.blob.core.windows.net", "open", None),
+        (2, "logstorage2024", "", "https://logstorage2024.blob.core.windows.net", "open", None),
+        (2, "devtestdata", "", "https://devtestdata.blob.core.windows.net", "closed", None),
+        (2, "publicmedia", "", "https://publicmedia.blob.core.windows.net", "open", "Globex Inc"),
+        (2, "azuremldata", "", "https://azuremldata.blob.core.windows.net", "open", None),
         # GCP
-        (3, "analytics-export-prod", "", "https://storage.googleapis.com/analytics-export-prod", "open"),
-        (3, "ml-training-data", "", "https://storage.googleapis.com/ml-training-data", "open"),
-        (3, "static-site-hosting", "", "https://storage.googleapis.com/static-site-hosting", "open"),
-        (3, "gcp-function-deploys", "", "https://storage.googleapis.com/gcp-function-deploys", "closed"),
-        (3, "bigquery-exports", "", "https://storage.googleapis.com/bigquery-exports", "open"),
+        (3, "analytics-export-prod", "", "https://storage.googleapis.com/analytics-export-prod", "open", "Acme Corp"),
+        (3, "ml-training-data", "", "https://storage.googleapis.com/ml-training-data", "open", None),
+        (3, "static-site-hosting", "", "https://storage.googleapis.com/static-site-hosting", "open", None),
+        (3, "gcp-function-deploys", "", "https://storage.googleapis.com/gcp-function-deploys", "closed", "Initech"),
+        (3, "bigquery-exports", "", "https://storage.googleapis.com/bigquery-exports", "open", None),
         # DigitalOcean
-        (4, "app-uploads", "nyc3", "https://app-uploads.nyc3.digitaloceanspaces.com", "open"),
-        (4, "cdn-static", "sfo3", "https://cdn-static.sfo3.digitaloceanspaces.com", "open"),
-        (4, "db-backups-do", "ams3", "https://db-backups-do.ams3.digitaloceanspaces.com", "open"),
+        (4, "app-uploads", "nyc3", "https://app-uploads.nyc3.digitaloceanspaces.com", "open", None),
+        (4, "cdn-static", "sfo3", "https://cdn-static.sfo3.digitaloceanspaces.com", "open", "Globex Inc"),
+        (4, "db-backups-do", "ams3", "https://db-backups-do.ams3.digitaloceanspaces.com", "open", None),
         # Alibaba
-        (5, "oss-public-data", "cn-hangzhou", "https://oss-public-data.oss-cn-hangzhou.aliyuncs.com", "open"),
-        (5, "app-resources-ali", "us-west-1", "https://app-resources-ali.oss-us-west-1.aliyuncs.com", "open"),
+        (5, "oss-public-data", "cn-hangzhou", "https://oss-public-data.oss-cn-hangzhou.aliyuncs.com", "open", None),
+        (5, "app-resources-ali", "us-west-1", "https://app-resources-ali.oss-us-west-1.aliyuncs.com", "open", "Acme Corp"),
     ]
 
     file_templates = [
@@ -134,8 +135,8 @@ def seed():
     now = datetime.utcnow()
     total_files = 0
 
-    for pid, bname, region, url, status in buckets_data:
-        bucket = BucketStore.upsert(pid, bname, region, url, status)
+    for pid, bname, region, url, status, company in buckets_data:
+        bucket = BucketStore.upsert(pid, bname, region, url, status, company_name=company)
         if status != "open":
             continue
 
