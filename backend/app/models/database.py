@@ -596,6 +596,41 @@ CREATE INDEX IF NOT EXISTS idx_remediations_due ON remediations(due_date);
 CREATE INDEX IF NOT EXISTS idx_remediations_completed ON remediations(completed_at);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_created_by ON scan_jobs(created_by);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_completed ON scan_jobs(completed_at);
+
+-- ═══ Sprint 7: 20 New Features ═══
+
+CREATE TABLE IF NOT EXISTS sensitive_findings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    bucket_id       INTEGER NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    file_id         INTEGER,
+    filepath        TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'medium',
+    compliance_controls TEXT DEFAULT '[]',
+    scanned_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE(bucket_id, filepath)
+);
+
+CREATE TABLE IF NOT EXISTS ticket_refs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform        TEXT NOT NULL DEFAULT 'jira',
+    external_id     TEXT,
+    title           TEXT NOT NULL,
+    description     TEXT,
+    priority        TEXT DEFAULT 'medium',
+    status          TEXT DEFAULT 'created',
+    bucket_id       INTEGER REFERENCES buckets(id),
+    alert_id        INTEGER REFERENCES alerts(id),
+    created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sf_bucket ON sensitive_findings(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_sf_severity ON sensitive_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_sf_category ON sensitive_findings(category);
+CREATE INDEX IF NOT EXISTS idx_tickets_user ON ticket_refs(user_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_bucket ON ticket_refs(bucket_id);
 """
 
 SEED_PROVIDERS = [
