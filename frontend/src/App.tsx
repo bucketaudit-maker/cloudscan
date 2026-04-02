@@ -156,6 +156,27 @@ export default function App() {
   const [execDash, setExecDash] = useState<any>(null)
   const [riskTrends, setRiskTrends] = useState<any>(null)
   const [remSla, setRemSla] = useState<any>(null)
+  // Sprint 7 state: 20 new features
+  const [featView, setFeatView] = useState('overview')
+  const [industryData, setIndustryData] = useState<any[]>([])
+  const [trendData, setTrendData] = useState<any>(null)
+  const [attackSurface, setAttackSurface] = useState<any>(null)
+  const [sensitiveFindings, setSensitiveFindings] = useState<any>({findings:[], count:0})
+  const [sensitiveSummary, setSensitiveSummary] = useState<any>(null)
+  const [compViolations, setCompViolations] = useState<any>(null)
+  const [breachTimeline, setBreachTimeline] = useState<any>(null)
+  const [execReport, setExecReport] = useState<any>(null)
+  const [tickets, setTickets] = useState<any[]>([])
+  const [takedownGuide, setTakedownGuide] = useState<any>(null)
+  const [benchmarkData, setBenchmarkData] = useState<any>(null)
+  const [benchmarkCompany, setBenchmarkCompany] = useState('')
+  const [patternSearch, setPatternSearch] = useState('')
+  const [patternResults, setPatternResults] = useState<any[]>([])
+  const [subdomainDomain, setSubdomainDomain] = useState('')
+  const [subdomainNames, setSubdomainNames] = useState<string[]>([])
+  const [codeText, setCodeText] = useState('')
+  const [codeRefs, setCodeRefs] = useState<any[]>([])
+  const [siemEvents, setSiemEvents] = useState<any[]>([])
   // Quick wins: toast, modal, loading, shortcuts
   const [toasts, setToasts] = useState<{id:number,msg:string,type:string}[]>([])
   const toast = useCallback((msg:string,type='info')=>{const id=Date.now();setToasts(p=>[...p,{id,msg,type}]);setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),3500)},[])
@@ -325,6 +346,7 @@ export default function App() {
             <NB id="dashboard" l="Dashboard" ic="◈"/>
             <NB id="drift" l="Drift" ic="△"/>
             <NB id="compliance" l="Compliance" ic="☑"/>
+            <NB id="intelligence" l="Intel" ic="⬡"/>
             <NB id="ai-insights" l="AI" ic="✦"/>
             <NB id="pricing" l="Pricing" ic="◇"/>
           </div>
@@ -622,9 +644,27 @@ export default function App() {
         <button onClick={()=>setView('buckets')} style={{background:'none',border:'none',color:'var(--text-tertiary)',cursor:'pointer',fontSize:12,marginBottom:16,padding:0}}>← Back</button>
         <div style={{padding:24,marginBottom:24}} className="card-static">
           <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,flexWrap:'wrap'}}><h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>{bd.name}</h2><Badge provider={bd.provider_name} big/><SBadge s={bd.status}/>{bd.risk_score!=null&&<RiskBadge score={bd.risk_score} level={bd.risk_level||'info'}/>}
-            {aiAvail&&<button onClick={()=>doClassifyBucket(bd.id)} disabled={classifyLoading} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'5px 14px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:11,fontWeight:600,opacity:classifyLoading?0.5:1}}>{classifyLoading?'Analyzing...':'✦ AI Analyze'}</button>}</div>
+            {aiAvail&&<button onClick={()=>doClassifyBucket(bd.id)} disabled={classifyLoading} style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',border:'none',padding:'5px 14px',borderRadius:6,cursor:'pointer',color:'#fff',fontSize:11,fontWeight:600,opacity:classifyLoading?0.5:1}}>{classifyLoading?'Analyzing...':'✦ AI Analyze'}</button>}
+            <button onClick={()=>apiFetch(`/sensitive/scan/${bd.id}`,{method:'POST'}).then(d=>{if(d?.count)toast(`Found ${d.count} sensitive files`,'info');else toast('No sensitive files found','success')})} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',padding:'5px 14px',borderRadius:6,cursor:'pointer',color:'var(--warning)',fontSize:11,fontWeight:600}}>🔍 Scan Sensitive</button>
+            <button onClick={()=>apiFetch(`/takedown/${bd.id}`).then(d=>d&&setTakedownGuide(d))} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',padding:'5px 14px',borderRadius:6,cursor:'pointer',color:'#f04848',fontSize:11,fontWeight:600}}>⚠ Takedown Guide</button>
+          </div>
           {aiClassSummary && Object.keys(aiClassSummary).length>0 && <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>{Object.entries(aiClassSummary).map(([cat,cnt]:any)=><div key={cat} style={{display:'flex',alignItems:'center',gap:4}}><ClassBadge c={cat}/><span style={{fontSize:11,color:'var(--text-muted)'}}>{cnt}</span></div>)}</div>}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:16}}>{[['Company (unverified)',bd.company_name],['URL',bd.url],['Region',bd.region||'Global'],['Files',fnum(bd.file_count)],['Size',fmt(bd.total_size_bytes)],['First Seen',bd.first_seen?.split('T')[0]],['Last Scanned',ago(bd.last_scanned)]].map(([l,v]:any)=><div key={l}><div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase' as const,marginBottom:4}}>{l}</div><div style={{fontSize:13,color:l.startsWith('Company')&&v?'var(--info)':'var(--text-secondary)',fontWeight:l.startsWith('Company')&&v?600:400,wordBreak:'break-all' as const}}>{v||'—'}</div>{l.startsWith('Company')&&v&&<div style={{fontSize:9,color:'var(--text-muted)',fontStyle:'italic',marginTop:2}}>Pattern-based attribution, not verified ownership</div>}</div>)}</div></div>
+        {takedownGuide && <div className="card-static" style={{padding:20,marginBottom:24,border:'1px solid #f04848'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <h3 style={{fontSize:14,fontWeight:700,color:'#f04848',margin:0}}>⚠ Takedown / Responsible Disclosure Guide</h3>
+            <button onClick={()=>setTakedownGuide(null)} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:14}}>✕</button></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+            <div><div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4}}>PROVIDER</div><div style={{fontSize:13,fontWeight:600}}>{takedownGuide.provider_display}</div></div>
+            <div><div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4}}>ABUSE EMAIL</div><div style={{fontSize:13,color:'var(--info)'}}>{takedownGuide.abuse_email}</div></div></div>
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:6}}>STEPS</div>
+            {takedownGuide.steps?.map((s:string,i:number)=><div key={i} style={{display:'flex',gap:8,padding:'4px 0',fontSize:12,color:'var(--text-secondary)'}}>
+              <span style={{color:'var(--accent)',fontWeight:700}}>{i+1}.</span>{s}</div>)}</div>
+          <details style={{marginTop:8}}><summary style={{fontSize:11,color:'var(--accent)',cursor:'pointer',fontWeight:600}}>View Email Template</summary>
+            <pre style={{marginTop:8,background:'var(--bg-primary)',padding:12,borderRadius:8,fontSize:11,whiteSpace:'pre-wrap',color:'var(--text-secondary)',maxHeight:300,overflow:'auto'}}>{takedownGuide.email_template}</pre></details>
+          <div style={{fontSize:10,color:'var(--text-muted)',fontStyle:'italic',marginTop:12}}>{takedownGuide.disclaimer}</div>
+        </div>}
         <h3 style={{fontSize:14,color:'var(--text-tertiary)',marginBottom:12}}>Contents ({fnum(bd.files?.total||0)} files)</h3>
         {bd.files?.items?.map((f:any,i:number)=><div key={f.id||i} style={{display:'grid',gridTemplateColumns:'28px 1fr 80px 85px 75px',gap:12,padding:'8px 12px',alignItems:'center',background:i%2===0?'var(--bg-secondary)':'transparent',borderRadius:4}}>
           <span style={{fontSize:16}}>{EI[f.extension]||'📄'}</span><a href={f.url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:'var(--accent-dim)',whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{f.filepath}</a>{f.ai_classification?<ClassBadge c={f.ai_classification}/>:<span style={{fontSize:10,color:'var(--text-muted)'}}>—</span>}<span style={{fontSize:11,color:'var(--text-muted)'}}>{fmt(f.size_bytes)}</span><span style={{fontSize:10,color:'var(--text-muted)'}}>{ago(f.last_modified)}</span></div>)}
@@ -1631,6 +1671,306 @@ export default function App() {
           </div>
         </div>
       })()}
+
+      {/* ─── INTELLIGENCE HUB (Sprint 7 — 20 Features) ─── */}
+      {view==='intelligence' && <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
+        <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',marginBottom:4}}>Intelligence Hub</h2>
+        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20}}>Advanced discovery, security analysis, compliance, and reporting across all 20 features.</p>
+
+        {/* Feature Tabs */}
+        <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:24,borderBottom:'1px solid var(--border-subtle)',paddingBottom:12}}>
+          {[['overview','Overview'],['discovery','Discovery'],['sensitive','Sensitive Data'],['compliance-v','Compliance'],['exposure','Exposure'],['trends','Trends'],['surface','Attack Surface'],['industry','Industry'],['benchmark','Benchmark'],['tickets','Tickets'],['siem','SIEM Export'],['takedown','Takedown']].map(([id,label])=>
+            <button key={id} onClick={()=>setFeatView(id)} style={{padding:'6px 14px',borderRadius:6,border:featView===id?'1px solid var(--accent)':'1px solid var(--border-subtle)',background:featView===id?'var(--accent-bg)':'transparent',color:featView===id?'var(--accent)':'var(--text-secondary)',fontSize:11,fontWeight:featView===id?700:400,cursor:'pointer'}}>{label}</button>)}
+        </div>
+
+        {/* Overview */}
+        {featView==='overview' && <div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:24}}>
+            {[['🔍','Discovery','Subdomain enumeration, GitHub leak scanning, wildcard search, change detection'],
+              ['🛡️','Security','Sensitive data classification, compliance mapping, exposure scoring, breach timeline'],
+              ['📊','Intelligence','Industry breakdown, trend analytics, attack surface mapping, competitor benchmarks'],
+              ['🔗','Integrations','Slack/Teams/Discord alerts, Jira tickets, SIEM export, API webhooks']
+            ].map(([ic,title,desc])=><div key={title} className="card-static" style={{padding:20}}>
+              <div style={{fontSize:28,marginBottom:8}}>{ic}</div>
+              <div style={{fontSize:14,fontWeight:700,color:'var(--text-primary)',marginBottom:6}}>{title}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)',lineHeight:1.5}}>{desc}</div>
+            </div>)}
+          </div>
+          <div className="card-static" style={{padding:20}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Quick Actions</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              {[['Scan Sensitive Data','Run deep classification on all bucket files','sensitive',()=>{setFeatView('sensitive')}],
+                ['View Compliance','Check compliance control violations','compliance-v',()=>{setFeatView('compliance-v');apiFetch('/compliance/violations').then(d=>d&&setCompViolations(d))}],
+                ['Industry Breakdown','See exposure by industry sector','industry',()=>{setFeatView('industry');apiFetch('/industry/breakdown').then(d=>d?.industries&&setIndustryData(d.industries))}],
+                ['Trend Analytics','View discovery trends over time','trends',()=>{setFeatView('trends');apiFetch('/trends?days=30').then(d=>d&&setTrendData(d))}],
+                ['Attack Surface','Map your cloud attack surface','surface',()=>{setFeatView('surface');apiFetch('/attack-surface').then(d=>d&&setAttackSurface(d))}],
+                ['Export SIEM','Export events for SIEM integration','siem',()=>{setFeatView('siem');apiFetch('/export/siem?format=json&hours=72').then(d=>d&&setSiemEvents(d.events||[]))}],
+              ].map(([title,desc,id,action]:any)=>
+                <button key={id} onClick={action} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:12,cursor:'pointer',textAlign:'left'}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'var(--accent)',marginBottom:4}}>{title}</div>
+                  <div style={{fontSize:10,color:'var(--text-muted)'}}>{desc}</div>
+                </button>)}
+            </div>
+          </div>
+        </div>}
+
+        {/* Discovery */}
+        {featView==='discovery' && <div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+            {/* Subdomain Discovery */}
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Subdomain Discovery</h3>
+              <p style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>Generate bucket names from domain/subdomain patterns.</p>
+              <div style={{display:'flex',gap:8,marginBottom:12}}>
+                <input value={subdomainDomain} onChange={e=>setSubdomainDomain(e.target.value)} placeholder="example.com" style={{...IS,flex:1}}/>
+                <button onClick={()=>apiFetch('/discovery/subdomains',{method:'POST',body:JSON.stringify({domain:subdomainDomain})}).then(d=>d?.bucket_names&&setSubdomainNames(d.bucket_names))} className="btn-primary" style={{padding:'8px 16px',fontSize:11,whiteSpace:'nowrap'}}>Generate</button>
+              </div>
+              {subdomainNames.length>0 && <div style={{maxHeight:200,overflow:'auto',background:'var(--bg-primary)',borderRadius:6,padding:8}}>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4}}>{subdomainNames.length} names generated</div>
+                {subdomainNames.map((n,i)=><div key={i} style={{fontSize:11,color:'var(--accent-dim)',padding:'2px 0',fontFamily:'var(--font-mono)'}}>{n}</div>)}
+              </div>}
+            </div>
+
+            {/* GitHub Leak Scanner */}
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Code Leak Scanner</h3>
+              <p style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>Paste code to extract bucket references (S3 URLs, storage configs).</p>
+              <textarea value={codeText} onChange={e=>setCodeText(e.target.value)} placeholder="Paste code, configs, or URLs here..." style={{...IS,height:80,resize:'vertical',fontFamily:'var(--font-mono)',fontSize:11}}/>
+              <button onClick={()=>apiFetch('/discovery/extract-refs',{method:'POST',body:JSON.stringify({text:codeText})}).then(d=>d?.references&&setCodeRefs(d.references))} className="btn-primary" style={{marginTop:8,padding:'8px 16px',fontSize:11}}>Extract References</button>
+              {codeRefs.length>0 && <div style={{marginTop:8,background:'var(--bg-primary)',borderRadius:6,padding:8}}>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4}}>{codeRefs.length} bucket references found</div>
+                {codeRefs.map((r,i)=><div key={i} style={{fontSize:11,color:'var(--warning)',padding:'2px 0',fontFamily:'var(--font-mono)'}}>{r.name} <span style={{color:'var(--text-muted)',fontSize:9}}>({r.source})</span></div>)}
+              </div>}
+            </div>
+          </div>
+
+          {/* Wildcard Search */}
+          <div className="card-static" style={{padding:20}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Wildcard Bucket Search</h3>
+            <p style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>Search indexed buckets using patterns (* = any, ? = single char).</p>
+            <div style={{display:'flex',gap:8,marginBottom:12}}>
+              <input value={patternSearch} onChange={e=>setPatternSearch(e.target.value)} placeholder="*-backup-*, prod-*-data, *secret*" style={{...IS,flex:1,fontFamily:'var(--font-mono)'}}/>
+              <button onClick={()=>apiFetch(`/buckets/search/pattern?pattern=${encodeURIComponent(patternSearch)}`).then(d=>d?.results&&setPatternResults(d.results))} className="btn-primary" style={{padding:'8px 16px',fontSize:11}}>Search</button>
+            </div>
+            {patternResults.length>0 && <div>
+              <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8}}>{patternResults.length} matches</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 80px',gap:8,padding:'4px 8px',fontSize:10,color:'var(--text-muted)',fontWeight:600,borderBottom:'1px solid var(--border-subtle)'}}><span>Bucket</span><span>Status</span><span>Risk</span><span>Files</span></div>
+              {patternResults.slice(0,20).map((b:any)=><div key={b.id} style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 80px',gap:8,padding:'6px 8px',alignItems:'center',fontSize:12}}>
+                <span style={{color:'var(--accent-dim)',fontWeight:600}}>{b.name}{b.company_name&&<span style={{color:'var(--info)',fontSize:10,marginLeft:6}}>{b.company_name}</span>}</span>
+                <SBadge s={b.status}/>{b.risk_score!=null?<RiskBadge score={b.risk_score} level={b.risk_level||'info'}/>:<span style={{color:'var(--text-muted)'}}>—</span>}<span>{b.file_count||0}</span>
+              </div>)}
+            </div>}
+          </div>
+        </div>}
+
+        {/* Sensitive Data */}
+        {featView==='sensitive' && <div>
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <button onClick={()=>apiFetch('/sensitive/summary').then(d=>d&&setSensitiveSummary(d))} className="btn-primary" style={{padding:'8px 16px',fontSize:11}}>Load Summary</button>
+            <button onClick={()=>apiFetch('/sensitive/findings?limit=100').then(d=>d&&setSensitiveFindings(d))} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'8px 16px',borderRadius:8,cursor:'pointer',fontSize:11}}>All Findings</button>
+          </div>
+
+          {sensitiveSummary && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>By Severity</h3>
+              {Object.entries(sensitiveSummary.by_severity||{}).map(([sev,count]:any)=><div key={sev} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                <SevBadge s={sev}/><span style={{fontSize:14,fontWeight:700}}>{count}</span></div>)}
+            </div>
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>By Category</h3>
+              {Object.entries(sensitiveSummary.by_category||{}).map(([cat,count]:any)=><div key={cat} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                <ClassBadge c={cat}/><span style={{fontSize:14,fontWeight:700}}>{count}</span></div>)}
+            </div>
+          </div>}
+
+          {sensitiveFindings.findings?.length>0 && <div className="card-static" style={{padding:20}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Findings ({sensitiveFindings.count})</h3>
+            {sensitiveFindings.findings.map((f:any,i:number)=><div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'8px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+              <SevBadge s={f.severity}/><ClassBadge c={f.category}/>
+              <span style={{flex:1,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.filepath}</span>
+              <span style={{fontSize:11,color:'var(--text-muted)'}}>{f.bucket_name}</span>
+            </div>)}
+          </div>}
+        </div>}
+
+        {/* Compliance Violations */}
+        {featView==='compliance-v' && <div>
+          <button onClick={()=>apiFetch('/compliance/violations').then(d=>d&&setCompViolations(d))} className="btn-primary" style={{padding:'8px 16px',fontSize:11,marginBottom:16}}>Check Violations</button>
+
+          {compViolations && <div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:24}}>
+              <div className="card-static" style={{padding:16,textAlign:'center'}}>
+                <div style={{fontSize:28,fontWeight:800,color:'#f04848'}}>{compViolations.total_controls_violated}</div>
+                <div style={{fontSize:11,color:'var(--text-muted)'}}>Controls Violated</div></div>
+              <div className="card-static" style={{padding:16,textAlign:'center'}}>
+                <div style={{fontSize:28,fontWeight:800,color:'var(--warning)'}}>{compViolations.frameworks_affected?.length||0}</div>
+                <div style={{fontSize:11,color:'var(--text-muted)'}}>Frameworks Affected</div></div>
+              <div className="card-static" style={{padding:16,textAlign:'center'}}>
+                <div style={{fontSize:12,fontWeight:600,color:'var(--text-secondary)'}}>
+                  {(compViolations.frameworks_affected||[]).map((f:string)=><span key={f} style={{display:'inline-block',margin:2,padding:'2px 8px',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:4,fontSize:10}}>{f}</span>)}
+                </div>
+                <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Affected Frameworks</div></div>
+            </div>
+
+            {compViolations.violations?.map((v:any)=><div key={v.control_id} className="card-static" style={{padding:16,marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div><span style={{fontSize:13,fontWeight:700}}>{v.control_id}</span><span style={{fontSize:11,color:'var(--text-muted)',marginLeft:8}}>{v.name}</span></div>
+                <span style={{fontSize:12,fontWeight:700,color:'#f04848'}}>{v.finding_count} findings</span></div>
+              <div style={{fontSize:11,color:'var(--text-tertiary)',marginBottom:8}}>{v.description}</div>
+              <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                {v.findings?.slice(0,5).map((f:any,i:number)=><span key={i} style={{fontSize:10,padding:'2px 6px',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:4,fontFamily:'var(--font-mono)'}}>{f.filepath.split('/').pop()}</span>)}
+              </div>
+            </div>)}
+          </div>}
+        </div>}
+
+        {/* Exposure Scoring */}
+        {featView==='exposure' && <div className="card-static" style={{padding:20}}>
+          <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Exposure Severity Scoring</h3>
+          <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>Click a bucket in the Buckets view to see its detailed exposure score. Scores factor in file types, volume, sensitivity findings, and access level.</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+            {[['File Types','.env, .pem, .key, .sql = Critical weight'],['Volume','10k+ files = +20, 1k+ = +15'],['Sensitive Data','Critical findings = +15 each, High = +10'],['Access Level','Open = +40, Partial = +20']].map(([t,d])=><div key={t} style={{padding:12,background:'var(--bg-primary)',borderRadius:8,border:'1px solid var(--border-subtle)'}}>
+              <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>{t}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)'}}>{d}</div></div>)}
+          </div>
+        </div>}
+
+        {/* Trends */}
+        {featView==='trends' && <div>
+          <button onClick={()=>apiFetch('/trends?days=30').then(d=>d&&setTrendData(d))} className="btn-primary" style={{padding:'8px 16px',fontSize:11,marginBottom:16}}>Load Trends (30 days)</button>
+          {trendData && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Buckets Discovered</h3>
+              {trendData.bucket_trend?.length>0 ? <div style={{display:'flex',alignItems:'end',gap:2,height:100}}>
+                {trendData.bucket_trend.map((d:any,i:number)=>{const max=Math.max(...trendData.bucket_trend.map((x:any)=>x.discovered||0),1);return <div key={i} style={{flex:1,background:d.open>0?'#f04848':'var(--accent)',height:`${Math.max(4,(d.discovered/max)*100)}%`,borderRadius:'2px 2px 0 0',minHeight:4}} title={`${d.date}: ${d.discovered} found, ${d.open} open`}/>})}
+              </div> : <div style={{color:'var(--text-muted)',fontSize:12}}>No trend data available</div>}
+            </div>
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Files Indexed</h3>
+              {trendData.file_trend?.length>0 ? <div style={{display:'flex',alignItems:'end',gap:2,height:100}}>
+                {trendData.file_trend.map((d:any,i:number)=>{const max=Math.max(...trendData.file_trend.map((x:any)=>x.indexed||0),1);return <div key={i} style={{flex:1,background:'var(--info)',height:`${Math.max(4,(d.indexed/max)*100)}%`,borderRadius:'2px 2px 0 0',minHeight:4}} title={`${d.date}: ${d.indexed} files`}/>})}
+              </div> : <div style={{color:'var(--text-muted)',fontSize:12}}>No file data available</div>}
+            </div>
+          </div>}
+        </div>}
+
+        {/* Attack Surface */}
+        {featView==='surface' && <div>
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <button onClick={()=>apiFetch('/attack-surface').then(d=>d&&setAttackSurface(d))} className="btn-primary" style={{padding:'8px 16px',fontSize:11}}>Map All</button>
+          </div>
+          {attackSurface?.summary && <div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+              {[['Buckets',attackSurface.summary.total_buckets],['Files',fnum(attackSurface.summary.total_files)],['Data',fmt(attackSurface.summary.total_size_bytes)],['Regions',Object.keys(attackSurface.summary.regions||{}).length]].map(([l,v]:any)=>
+                <div key={l} className="card-static" style={{padding:12,textAlign:'center'}}><div style={{fontSize:22,fontWeight:800}}>{v}</div><div style={{fontSize:10,color:'var(--text-muted)'}}>{l}</div></div>)}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+              <div className="card-static" style={{padding:16}}>
+                <h4 style={{fontSize:12,fontWeight:700,marginBottom:8}}>By Provider</h4>
+                {Object.entries(attackSurface.summary.providers||{}).map(([p,c]:any)=><div key={p} style={{display:'flex',justifyContent:'space-between',padding:'4px 0'}}><Badge provider={p}/><span style={{fontWeight:700}}>{c}</span></div>)}
+              </div>
+              <div className="card-static" style={{padding:16}}>
+                <h4 style={{fontSize:12,fontWeight:700,marginBottom:8}}>By Status</h4>
+                {Object.entries(attackSurface.summary.statuses||{}).filter(([,c]:any)=>c>0).map(([s,c]:any)=><div key={s} style={{display:'flex',justifyContent:'space-between',padding:'4px 0'}}><SBadge s={s}/><span style={{fontWeight:700}}>{c}</span></div>)}
+              </div>
+            </div>
+            <div className="card-static" style={{padding:16}}>
+              <h4 style={{fontSize:12,fontWeight:700,marginBottom:8}}>Top Risk Nodes ({attackSurface.nodes?.length})</h4>
+              {attackSurface.nodes?.slice(0,15).map((n:any)=><div key={n.id} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                <span style={{fontSize:12,fontWeight:600,color:'var(--accent-dim)',flex:1}}>{n.name}</span>
+                {n.company_name&&<span style={{fontSize:10,color:'var(--info)'}}>{n.company_name}</span>}
+                <Badge provider={n.provider}/><SBadge s={n.status}/>
+                {n.risk_score!=null&&<RiskBadge score={n.risk_score} level={n.risk_level||'info'}/>}
+              </div>)}
+            </div>
+          </div>}
+        </div>}
+
+        {/* Industry */}
+        {featView==='industry' && <div>
+          <button onClick={()=>apiFetch('/industry/breakdown').then(d=>d?.industries&&setIndustryData(d.industries))} className="btn-primary" style={{padding:'8px 16px',fontSize:11,marginBottom:16}}>Load Industry Data</button>
+          {industryData.length>0 && <div className="card-static" style={{padding:20}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Exposure by Industry</h3>
+            {industryData.map((ind:any)=><div key={ind.industry} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+              <span style={{width:120,fontSize:12,fontWeight:700,textTransform:'capitalize'}}>{ind.industry}</span>
+              <div style={{flex:1,height:8,background:'var(--bg-primary)',borderRadius:4,overflow:'hidden'}}>
+                <div style={{height:'100%',background:ind.open_buckets>0?'#f04848':'var(--accent)',borderRadius:4,width:`${Math.min(100,(ind.buckets/Math.max(...industryData.map((x:any)=>x.buckets),1))*100)}%`}}/>
+              </div>
+              <span style={{width:60,fontSize:12,fontWeight:600,textAlign:'right'}}>{ind.buckets} buckets</span>
+              <span style={{width:50,fontSize:10,color:ind.open_buckets>0?'#f04848':'var(--text-muted)'}}>{ind.open_buckets} open</span>
+              <span style={{width:60,fontSize:10,color:'var(--text-muted)'}}>{ind.companies} co.</span>
+            </div>)}
+          </div>}
+        </div>}
+
+        {/* Benchmark */}
+        {featView==='benchmark' && <div>
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <input value={benchmarkCompany} onChange={e=>setBenchmarkCompany(e.target.value)} placeholder="Company name" style={{...IS,width:300}}/>
+            <button onClick={()=>apiFetch(`/benchmark?company=${encodeURIComponent(benchmarkCompany)}`).then(d=>d&&setBenchmarkData(d))} className="btn-primary" style={{padding:'8px 16px',fontSize:11}}>Compare</button>
+          </div>
+          {benchmarkData?.benchmark && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>{benchmarkData.company}</h3>
+              <div style={{fontSize:11,color:'var(--info)',marginBottom:12}}>Industry: {benchmarkData.industry}</div>
+              {Object.entries(benchmarkData.stats||{}).map(([k,v]:any)=><div key={k} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                <span style={{fontSize:12,color:'var(--text-muted)'}}>{k.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700}}>{typeof v==='number'?v.toLocaleString():v}</span></div>)}
+            </div>
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Industry Benchmark</h3>
+              {Object.entries(benchmarkData.benchmark||{}).map(([k,v]:any)=><div key={k} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                <span style={{fontSize:12,color:'var(--text-muted)'}}>{k.replace(/_/g,' ')}</span><span style={{fontSize:12,fontWeight:700}}>{typeof v==='number'?v.toLocaleString():v}</span></div>)}
+            </div>
+          </div>}
+        </div>}
+
+        {/* Tickets */}
+        {featView==='tickets' && <div>
+          <button onClick={()=>apiFetch('/tickets').then(d=>d?.tickets&&setTickets(d.tickets))} className="btn-primary" style={{padding:'8px 16px',fontSize:11,marginBottom:16}}>Load Tickets</button>
+          {tickets.length>0 ? tickets.map((t:any)=><div key={t.id} className="card-static" style={{padding:16,marginBottom:8}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div><span style={{fontSize:13,fontWeight:700}}>{t.title}</span><span style={{fontSize:10,color:'var(--text-muted)',marginLeft:8}}>{t.platform}</span></div>
+              <SevBadge s={t.priority}/>
+            </div>
+            {t.description&&<div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>{t.description}</div>}
+            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>Status: {t.status} • {t.bucket_name&&`Bucket: ${t.bucket_name} • `}{ago(t.created_at)}</div>
+          </div>) : <div style={{color:'var(--text-muted)',fontSize:12}}>No tickets created yet. Create tickets from alerts or bucket findings.</div>}
+        </div>}
+
+        {/* SIEM Export */}
+        {featView==='siem' && <div>
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <button onClick={()=>apiFetch('/export/siem?format=json&hours=72').then(d=>d&&setSiemEvents(d.events||[]))} className="btn-primary" style={{padding:'8px 16px',fontSize:11}}>Export JSON (72h)</button>
+            <button onClick={()=>apiFetch('/export/siem?format=cef&hours=72').then(d=>d&&setSiemEvents(d.events||[]))} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)',padding:'8px 16px',borderRadius:8,cursor:'pointer',fontSize:11}}>Export CEF</button>
+          </div>
+          <div className="card-static" style={{padding:20}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Events ({siemEvents.length})</h3>
+            <div style={{maxHeight:400,overflow:'auto',background:'var(--bg-primary)',borderRadius:8,padding:12,fontFamily:'var(--font-mono)',fontSize:11}}>
+              {siemEvents.length>0 ? siemEvents.map((e:any,i:number)=><div key={i} style={{padding:'4px 0',borderBottom:'1px solid var(--border-subtle)',wordBreak:'break-all'}}>{typeof e==='string'?e:JSON.stringify(e)}</div>)
+              : <div style={{color:'var(--text-muted)'}}>No events in the selected time period.</div>}
+            </div>
+          </div>
+        </div>}
+
+        {/* Takedown */}
+        {featView==='takedown' && <div className="card-static" style={{padding:20}}>
+          <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Takedown Assistance</h3>
+          <p style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>Get responsible disclosure guides from the bucket detail view. Click any bucket, then use the "Takedown Guide" button.</p>
+          <h4 style={{fontSize:12,fontWeight:700,marginBottom:8}}>Provider Abuse Contacts</h4>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            {[['AWS','abuse@amazonaws.com','https://support.aws.amazon.com/#/contacts/report-abuse'],
+              ['Azure','cert@microsoft.com','https://msrc.microsoft.com/report/abuse'],
+              ['GCP','gcp-abuse@google.com','https://support.google.com/code/contact/cloud_platform_report'],
+              ['DigitalOcean','abuse@digitalocean.com','https://www.digitalocean.com/company/contact#abuse'],
+              ['Alibaba','abuse@service.alibaba.com','https://www.alibabacloud.com/report'],
+            ].map(([name,email,url])=><div key={name} style={{padding:12,background:'var(--bg-primary)',borderRadius:8,border:'1px solid var(--border-subtle)'}}>
+              <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>{name}</div>
+              <div style={{fontSize:10,color:'var(--info)',marginBottom:2}}>{email}</div>
+              <div style={{fontSize:10,color:'var(--text-muted)',wordBreak:'break-all'}}>{url}</div>
+            </div>)}
+          </div>
+        </div>}
+      </div>}
 
       {/* ─── TOAST NOTIFICATIONS ─── */}
       {toasts.length>0 && <div style={{position:'fixed',bottom:20,right:20,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>

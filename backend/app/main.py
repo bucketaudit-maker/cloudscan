@@ -51,6 +51,10 @@ def create_app() -> Flask:
     # Register blueprints
     app.register_blueprint(api)
 
+    # Register Sprint 7 features blueprint under the same prefix
+    from backend.app.api.features_routes import features_api
+    app.register_blueprint(features_api, url_prefix="/api/v1")
+
     # Start monitoring scheduler only in scheduler role, not in every API worker.
     if settings.ENABLE_MONITOR_SCHEDULER:
         from backend.app.api.routes import monitor_service
