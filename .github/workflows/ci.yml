@@ -14,6 +14,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
       - name: Install dependencies
         run: |
           cd backend
@@ -23,6 +28,10 @@ jobs:
         run: |
           pip install flake8
           flake8 backend/app --max-line-length=120 --ignore=E501,W503
+      - name: Security audit
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --ignore-vuln PYSEC-2024-* || true
       - name: Test
         run: python -m pytest backend/tests/ -v
       - name: Verify DB init
@@ -35,8 +44,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
       - name: Install
         run: cd frontend && npm install
+      - name: Security audit
+        run: cd frontend && npm audit --audit-level=high || true
       - name: Type check
         run: cd frontend && npx tsc --noEmit
       - name: Build

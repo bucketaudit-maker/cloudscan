@@ -5,15 +5,20 @@ services:
     image: postgres:16-alpine
     container_name: cloudscan-db
     environment:
-      POSTGRES_USER: cloudscan
-      POSTGRES_PASSWORD: cloudscan
-      POSTGRES_DB: cloudscan
+      POSTGRES_USER: ${POSTGRES_USER:-cloudscan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-cloudscan}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cloudscan -d cloudscan"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cloudscan} -d ${POSTGRES_DB:-cloudscan}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,10 +28,15 @@ services:
     container_name: cloudscan-api
     ports:
       - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
     environment:
       - APP_ENV=production
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production-please}
-      - DATABASE_URL=postgresql://cloudscan:cloudscan@db:5432/cloudscan
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloudscan}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cloudscan}
       - SCANNER_CONCURRENCY=50
       - CORS_ORIGINS=http://localhost,http://localhost:80,http://localhost:5173
       - AI_PROVIDER=${AI_PROVIDER:-}
@@ -53,7 +63,7 @@ services:
     environment:
       - APP_ENV=production
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production-please}
-      - DATABASE_URL=postgresql://cloudscan:cloudscan@db:5432/cloudscan
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloudscan}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cloudscan}
       - AI_PROVIDER=${AI_PROVIDER:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
