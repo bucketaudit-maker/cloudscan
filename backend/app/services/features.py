@@ -356,7 +356,7 @@ def get_industry_breakdown() -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════
 
 def get_trend_data(days: int = 30) -> dict:
-    """Get bucket/file discovery trends over time."""
+    """Get bucket/file discovery trends over time with summary stats."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with get_db() as db:
         # Buckets discovered per day
@@ -381,11 +381,61 @@ def get_trend_data(days: int = 30) -> dict:
             GROUP BY diff_type, SUBSTRING(CAST(created_at AS VARCHAR), 1, 10) ORDER BY day
         """, (cutoff,)).fetchall()
 
+        # Summary statistics
+        summary = db.execute("""
+            SELECT
+                COUNT(*) as total_buckets,
+                SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_buckets,
+                SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed_buckets,
+                SUM(file_count) as total_files,
+                SUM(total_size_bytes) as total_size,
+                COUNT(DISTINCT company_name) FILTER (WHERE company_name IS NOT NULL) as unique_companies
+            FROM buckets
+        """).fetchone()
+
+        # Period-specific stats
+        period_stats = db.execute("""
+            SELECT
+                COUNT(*) as new_buckets,
+                SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as new_open
+            FROM buckets WHERE first_seen >= %s
+        """, (cutoff,)).fetchone()
+
+        # Provider breakdown
+        provider_breakdown = db.execute("""
+            SELECT p.name, COUNT(*) as count,
+                   SUM(CASE WHEN b.status='open' THEN 1 ELSE 0 END) as open_count
+            FROM buckets b JOIN providers p ON b.provider_id = p.id
+            GROUP BY p.name ORDER BY count DESC
+        """).fetchall()
+
+        # Top regions
+        top_regions = db.execute("""
+            SELECT region, COUNT(*) as count,
+                   SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_count
+            FROM buckets WHERE region IS NOT NULL AND region != ''
+            GROUP BY region ORDER BY count DESC LIMIT 10
+        """).fetchall()
+
     return {
         "period_days": days,
         "bucket_trend": [{"date": r[0], "discovered": r[1], "open": r[2]} for r in bucket_trend],
         "file_trend": [{"date": r[0], "indexed": r[1], "total_size": r[2] or 0} for r in file_trend],
         "status_changes": [{"type": r[0], "count": r[1], "date": r[2]} for r in status_trend],
+        "summary": {
+            "total_buckets": summary[0] or 0,
+            "open_buckets": summary[1] or 0,
+            "closed_buckets": summary[2] or 0,
+            "total_files": summary[3] or 0,
+            "total_size": summary[4] or 0,
+            "unique_companies": summary[5] or 0,
+        } if summary else {},
+        "period_stats": {
+            "new_buckets": period_stats[0] or 0,
+            "new_open": period_stats[1] or 0,
+        } if period_stats else {},
+        "provider_breakdown": [{"provider": r[0], "count": r[1], "open": r[2]} for r in provider_breakdown],
+        "top_regions": [{"region": r[0], "count": r[1], "open": r[2]} for r in top_regions],
     }
 
 
