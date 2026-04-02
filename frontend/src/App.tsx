@@ -1680,7 +1680,7 @@ export default function App() {
         {/* Feature Tabs */}
         <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:24,borderBottom:'1px solid var(--border-subtle)',paddingBottom:12}}>
           {[['overview','Overview'],['discovery','Discovery'],['sensitive','Sensitive Data'],['compliance-v','Compliance'],['exposure','Exposure'],['trends','Trends'],['surface','Attack Surface'],['industry','Industry'],['benchmark','Benchmark'],['tickets','Tickets'],['siem','SIEM Export'],['takedown','Takedown']].map(([id,label])=>
-            <button key={id} onClick={()=>setFeatView(id)} style={{padding:'6px 14px',borderRadius:6,border:featView===id?'1px solid var(--accent)':'1px solid var(--border-subtle)',background:featView===id?'var(--accent-bg)':'transparent',color:featView===id?'var(--accent)':'var(--text-secondary)',fontSize:11,fontWeight:featView===id?700:400,cursor:'pointer'}}>{label}</button>)}
+            <button key={id} onClick={()=>{setFeatView(id);if(id==='trends'&&!trendData)apiFetch('/trends?days=30').then(d=>d&&setTrendData(d))}} style={{padding:'6px 14px',borderRadius:6,border:featView===id?'1px solid var(--accent)':'1px solid var(--border-subtle)',background:featView===id?'var(--accent-bg)':'transparent',color:featView===id?'var(--accent)':'var(--text-secondary)',fontSize:11,fontWeight:featView===id?700:400,cursor:'pointer'}}>{label}</button>)}
         </div>
 
         {/* Overview */}
@@ -1837,19 +1837,98 @@ export default function App() {
 
         {/* Trends */}
         {featView==='trends' && <div>
-          <button onClick={()=>apiFetch('/trends?days=30').then(d=>d&&setTrendData(d))} className="btn-primary" style={{padding:'8px 16px',fontSize:11,marginBottom:16}}>Load Trends (30 days)</button>
+          <div style={{display:'flex',gap:8,marginBottom:20}}>
+            {[7,30,90].map(d=><button key={d} onClick={()=>apiFetch(`/trends?days=${d}`).then(r=>r&&setTrendData(r))} className={trendData?.period_days===d?'btn-primary':''} style={{padding:'8px 16px',fontSize:11,background:trendData?.period_days===d?'':'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,color:trendData?.period_days===d?'#000':'var(--text-secondary)',cursor:'pointer',fontWeight:600}}>{d} days</button>)}
+          </div>
+
+          {/* Summary Stats Cards */}
+          {trendData?.summary && <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:20}}>
+            {[
+              ['Total Buckets',fnum(trendData.summary.total_buckets),'var(--accent)',''],
+              ['Open Buckets',fnum(trendData.summary.open_buckets),'#f04848',trendData.summary.total_buckets?`${Math.round((trendData.summary.open_buckets/trendData.summary.total_buckets)*100)}% exposure`:''],
+              [`New (${trendData.period_days}d)`,fnum(trendData.period_stats?.new_buckets||0),'var(--info)',trendData.period_stats?.new_open?`${trendData.period_stats.new_open} open`:'all closed'],
+              ['Companies Tracked',fnum(trendData.summary.unique_companies),'var(--warning)',''],
+            ].map(([label,val,color,sub]:any)=><div key={label} className="card-static" style={{padding:16,textAlign:'center'}}>
+              <div style={{fontSize:24,fontWeight:800,color,fontFamily:'var(--font-display)'}}>{val}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{label}</div>
+              {sub&&<div style={{fontSize:10,color:'var(--text-tertiary)',marginTop:2}}>{sub}</div>}
+            </div>)}
+          </div>}
+
+          {trendData && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
+            {/* Buckets Chart */}
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:4}}>Buckets Discovered</h3>
+              <p style={{fontSize:10,color:'var(--text-muted)',marginBottom:12}}>Daily discovery rate over {trendData.period_days} days. Red = has open buckets.</p>
+              {trendData.bucket_trend?.length>0 ? <div>
+                <div style={{display:'flex',alignItems:'end',gap:2,height:120}}>
+                  {trendData.bucket_trend.map((d:any,i:number)=>{const max=Math.max(...trendData.bucket_trend.map((x:any)=>x.discovered||0),1);return <div key={i} style={{flex:1,background:d.open>0?'#f04848':'var(--accent)',height:`${Math.max(4,(d.discovered/max)*100)}%`,borderRadius:'2px 2px 0 0',minHeight:4,transition:'height 0.3s'}} title={`${d.date}: ${d.discovered} found, ${d.open} open`}/>})}
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:9,color:'var(--text-muted)'}}>
+                  <span>{trendData.bucket_trend[0]?.date}</span>
+                  <span>{trendData.bucket_trend[trendData.bucket_trend.length-1]?.date}</span>
+                </div>
+                <div style={{display:'flex',gap:12,marginTop:8,fontSize:10,color:'var(--text-muted)'}}>
+                  <span><span style={{display:'inline-block',width:8,height:8,borderRadius:2,background:'var(--accent)',marginRight:4}}/>Closed</span>
+                  <span><span style={{display:'inline-block',width:8,height:8,borderRadius:2,background:'#f04848',marginRight:4}}/>Has Open</span>
+                </div>
+              </div> : <div style={{color:'var(--text-muted)',fontSize:12,padding:20,textAlign:'center'}}>No bucket data for this period</div>}
+            </div>
+            {/* Files Chart */}
+            <div className="card-static" style={{padding:20}}>
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:4}}>Files Indexed</h3>
+              <p style={{fontSize:10,color:'var(--text-muted)',marginBottom:12}}>Daily file indexing volume. Total: {fnum(trendData.summary?.total_files||0)} files ({fmt(trendData.summary?.total_size||0)})</p>
+              {trendData.file_trend?.length>0 ? <div>
+                <div style={{display:'flex',alignItems:'end',gap:2,height:120}}>
+                  {trendData.file_trend.map((d:any,i:number)=>{const max=Math.max(...trendData.file_trend.map((x:any)=>x.indexed||0),1);return <div key={i} style={{flex:1,background:'var(--info)',height:`${Math.max(4,(d.indexed/max)*100)}%`,borderRadius:'2px 2px 0 0',minHeight:4,transition:'height 0.3s'}} title={`${d.date}: ${d.indexed} files (${fmt(d.total_size)})`}/>})}
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:9,color:'var(--text-muted)'}}>
+                  <span>{trendData.file_trend[0]?.date}</span>
+                  <span>{trendData.file_trend[trendData.file_trend.length-1]?.date}</span>
+                </div>
+              </div> : <div style={{color:'var(--text-muted)',fontSize:12,padding:20,textAlign:'center'}}>No file data for this period</div>}
+            </div>
+          </div>}
+
+          {/* Provider Breakdown + Top Regions */}
           {trendData && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
             <div className="card-static" style={{padding:20}}>
-              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Buckets Discovered</h3>
-              {trendData.bucket_trend?.length>0 ? <div style={{display:'flex',alignItems:'end',gap:2,height:100}}>
-                {trendData.bucket_trend.map((d:any,i:number)=>{const max=Math.max(...trendData.bucket_trend.map((x:any)=>x.discovered||0),1);return <div key={i} style={{flex:1,background:d.open>0?'#f04848':'var(--accent)',height:`${Math.max(4,(d.discovered/max)*100)}%`,borderRadius:'2px 2px 0 0',minHeight:4}} title={`${d.date}: ${d.discovered} found, ${d.open} open`}/>})}
-              </div> : <div style={{color:'var(--text-muted)',fontSize:12}}>No trend data available</div>}
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Provider Breakdown</h3>
+              {trendData.provider_breakdown?.length>0 ? trendData.provider_breakdown.map((p:any)=>{const pct=trendData.summary?.total_buckets?Math.round((p.count/trendData.summary.total_buckets)*100):0;return <div key={p.provider} style={{marginBottom:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}>
+                  <span style={{fontWeight:600}}>{PL[p.provider]||p.provider}</span>
+                  <span style={{color:'var(--text-muted)'}}>{fnum(p.count)} ({pct}%){p.open>0&&<span style={{color:'#f04848',marginLeft:6}}>{p.open} open</span>}</span>
+                </div>
+                <div style={{height:6,background:'var(--bg-primary)',borderRadius:3,overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${pct}%`,background:p.open>0?'linear-gradient(90deg, var(--accent), #f04848)':'var(--accent)',borderRadius:3,transition:'width 0.5s'}}/>
+                </div>
+              </div>}) : <div style={{color:'var(--text-muted)',fontSize:12}}>No provider data</div>}
             </div>
             <div className="card-static" style={{padding:20}}>
-              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Files Indexed</h3>
-              {trendData.file_trend?.length>0 ? <div style={{display:'flex',alignItems:'end',gap:2,height:100}}>
-                {trendData.file_trend.map((d:any,i:number)=>{const max=Math.max(...trendData.file_trend.map((x:any)=>x.indexed||0),1);return <div key={i} style={{flex:1,background:'var(--info)',height:`${Math.max(4,(d.indexed/max)*100)}%`,borderRadius:'2px 2px 0 0',minHeight:4}} title={`${d.date}: ${d.indexed} files`}/>})}
-              </div> : <div style={{color:'var(--text-muted)',fontSize:12}}>No file data available</div>}
+              <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Top Regions</h3>
+              {trendData.top_regions?.length>0 ? trendData.top_regions.map((r:any,i:number)=>{const max=Math.max(...trendData.top_regions.map((x:any)=>x.count),1);return <div key={r.region} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <span style={{fontSize:10,color:'var(--text-muted)',width:16,textAlign:'right'}}>{i+1}</span>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}}>
+                    <span style={{fontWeight:500}}>{r.region}</span>
+                    <span style={{color:'var(--text-muted)'}}>{fnum(r.count)}{r.open>0&&<span style={{color:'#f04848',marginLeft:4}}>({r.open} open)</span>}</span>
+                  </div>
+                  <div style={{height:4,background:'var(--bg-primary)',borderRadius:2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${(r.count/max)*100}%`,background:'var(--info)',borderRadius:2}}/>
+                  </div>
+                </div>
+              </div>}) : <div style={{color:'var(--text-muted)',fontSize:12}}>No region data</div>}
+            </div>
+          </div>}
+
+          {/* Status Changes */}
+          {trendData?.status_changes?.length>0 && <div className="card-static" style={{padding:20,marginTop:16}}>
+            <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>Status Changes ({trendData.period_days}d)</h3>
+            <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+              {Object.entries(trendData.status_changes.reduce((a:any,c:any)=>{a[c.type]=(a[c.type]||0)+c.count;return a},{})).map(([type,count]:any)=><div key={type} style={{padding:'8px 16px',background:'var(--bg-primary)',borderRadius:8,textAlign:'center'}}>
+                <div style={{fontSize:18,fontWeight:700,color:type==='new_open'?'#f04848':type==='closed'?'var(--accent)':'var(--info)'}}>{fnum(count)}</div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{type.replace(/_/g,' ')}</div>
+              </div>)}
             </div>
           </div>}
         </div>}
