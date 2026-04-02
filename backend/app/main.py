@@ -9,8 +9,9 @@ import logging
 import os
 import sys
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -78,6 +79,31 @@ def create_app() -> Flask:
         )
     else:
         logging.getLogger(__name__).info("Scan scheduler disabled (ENABLE_SCAN_SCHEDULER=false)")
+
+    # Global error handlers — prevent stack trace leaks in production
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "Not found", "status": 404}), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed(e):
+        return jsonify({"error": "Method not allowed", "status": 405}), 405
+
+    @app.errorhandler(429)
+    def rate_limited(e):
+        return jsonify({"error": "Rate limit exceeded. Please try again later.", "status": 429}), 429
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        logging.getLogger(__name__).error("Unhandled 500 error: %s", e, exc_info=True)
+        return jsonify({"error": "Internal server error", "status": 500}), 500
+
+    @app.errorhandler(Exception)
+    def handle_unexpected(e):
+        if isinstance(e, HTTPException):
+            return jsonify({"error": e.description, "status": e.code}), e.code
+        logging.getLogger(__name__).error("Unexpected error: %s", e, exc_info=True)
+        return jsonify({"error": "Internal server error", "status": 500}), 500
 
     # Health check at root
     @app.route("/")
