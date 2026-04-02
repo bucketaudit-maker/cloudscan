@@ -357,28 +357,29 @@ def get_industry_breakdown() -> list[dict]:
 
 def get_trend_data(days: int = 30) -> dict:
     """Get bucket/file discovery trends over time."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with get_db() as db:
         # Buckets discovered per day
         bucket_trend = db.execute("""
-            SELECT DATE(first_seen) as day, COUNT(*) as count,
+            SELECT SUBSTRING(first_seen, 1, 10) as day, COUNT(*) as count,
                    SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_count
-            FROM buckets WHERE first_seen >= DATE('now', %s)
-            GROUP BY DATE(first_seen) ORDER BY day
-        """, (f"-{days} days",)).fetchall()
+            FROM buckets WHERE first_seen >= %s
+            GROUP BY SUBSTRING(first_seen, 1, 10) ORDER BY day
+        """, (cutoff,)).fetchall()
 
         # Files indexed per day
         file_trend = db.execute("""
-            SELECT DATE(indexed_at) as day, COUNT(*) as count, SUM(size_bytes) as total_size
-            FROM files WHERE indexed_at >= DATE('now', %s)
-            GROUP BY DATE(indexed_at) ORDER BY day
-        """, (f"-{days} days",)).fetchall()
+            SELECT SUBSTRING(indexed_at, 1, 10) as day, COUNT(*) as count, SUM(size_bytes) as total_size
+            FROM files WHERE indexed_at >= %s
+            GROUP BY SUBSTRING(indexed_at, 1, 10) ORDER BY day
+        """, (cutoff,)).fetchall()
 
         # Status changes
         status_trend = db.execute("""
-            SELECT diff_type, COUNT(*) as count, DATE(created_at) as day
-            FROM scan_diffs WHERE created_at >= DATE('now', %s)
-            GROUP BY diff_type, DATE(created_at) ORDER BY day
-        """, (f"-{days} days",)).fetchall()
+            SELECT diff_type, COUNT(*) as count, SUBSTRING(created_at, 1, 10) as day
+            FROM scan_diffs WHERE created_at >= %s
+            GROUP BY diff_type, SUBSTRING(created_at, 1, 10) ORDER BY day
+        """, (cutoff,)).fetchall()
 
     return {
         "period_days": days,
@@ -546,13 +547,14 @@ def search_buckets_regex(pattern: str, limit: int = 100) -> list[dict]:
 
 def export_siem_events(format: str = "cef", since_hours: int = 24) -> list[str]:
     """Export security events in SIEM-compatible format (CEF or JSON)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).isoformat()
     with get_db() as db:
         alerts = db.execute("""
             SELECT a.*, b.name as bucket_name, b.url as bucket_url
             FROM alerts a LEFT JOIN buckets b ON a.bucket_id=b.id
-            WHERE a.created_at >= datetime('now', %s)
+            WHERE a.created_at >= %s
             ORDER BY a.created_at DESC
-        """, (f"-{since_hours} hours",)).fetchall()
+        """, (cutoff,)).fetchall()
 
     events = []
     for a in alerts:

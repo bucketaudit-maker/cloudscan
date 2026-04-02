@@ -102,7 +102,9 @@ def pattern_search_buckets():
 @auth_required
 def get_rescan_changes():
     """Get recent changes detected by scheduled re-scans."""
+    from datetime import datetime, timezone, timedelta
     days = min(int(request.args.get("days", 7)), 90)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with get_db() as db:
         changes = db.execute("""
             SELECT sd.*, b.name as bucket_name, b.status, b.company_name,
@@ -110,9 +112,9 @@ def get_rescan_changes():
             FROM scan_diffs sd
             JOIN buckets b ON sd.bucket_id=b.id
             JOIN providers p ON b.provider_id=p.id
-            WHERE sd.created_at >= DATE('now', %s)
+            WHERE sd.created_at >= %s
             ORDER BY sd.created_at DESC LIMIT 200
-        """, (f"-{days} days",)).fetchall()
+        """, (cutoff,)).fetchall()
     return jsonify({
         "period_days": days,
         "changes": [dict(r) for r in changes],
