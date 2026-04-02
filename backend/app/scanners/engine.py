@@ -158,7 +158,9 @@ class BucketResult:
 # ═══════════════════════════════════════════════════════════════════
 
 COMMON_WORDS = [
-    "backup", "data", "dev", "staging", "prod", "production", "test", "testing",
+    # --- Infrastructure & Environments ---
+    "backup", "bak", "backups", "data", "dev", "development", "staging", "stg",
+    "prod", "production", "test", "testing", "qa", "uat", "demo", "sandbox",
     "static", "assets", "media", "uploads", "public", "private", "config",
     "logs", "temp", "tmp", "archive", "old", "new", "web", "app", "api",
     "cdn", "images", "files", "docs", "documents", "reports", "db", "database",
@@ -166,12 +168,54 @@ COMMON_WORDS = [
     "admin", "cms", "content", "resources", "download", "storage", "store",
     "secrets", "keys", "credentials", "terraform", "deploy", "release",
     "beta", "alpha", "legacy", "migration", "snapshot", "replica",
+    # --- DevOps & CI/CD ---
+    "jenkins", "gitlab", "github", "circleci", "travis", "docker", "k8s",
+    "kubernetes", "ansible", "puppet", "chef", "terraform", "infra",
+    "infrastructure", "ci", "cd", "pipeline", "build", "artifact", "artifacts",
+    "packages", "registry", "helm", "charts",
+    # --- Databases & Data ---
+    "mysql", "postgres", "mongodb", "redis", "elasticsearch", "sql", "nosql",
+    "warehouse", "datalake", "lake", "etl", "analytics", "bigdata", "hadoop",
+    "spark", "kafka", "dataset", "datasets", "training", "ml", "model",
+    "models", "csv", "json", "xml", "parquet",
+    # --- Web & Application ---
+    "website", "site", "frontend", "backend", "server", "service", "services",
+    "microservice", "gateway", "proxy", "nginx", "apache", "tomcat", "node",
+    "react", "angular", "vue", "wordpress", "drupal", "magento", "shopify",
+    # --- Security & Auth ---
+    "ssl", "certs", "certificates", "oauth", "auth", "token", "tokens",
+    "password", "passwd", "htpasswd", "env", "dotenv", "pem", "ssh",
+    "vpn", "firewall", "audit", "compliance", "security",
+    # --- Business & Finance ---
+    "invoice", "invoices", "payment", "billing", "financial", "accounting",
+    "payroll", "tax", "contract", "contracts", "legal", "hr", "employee",
+    "customer", "clients", "vendor", "vendors", "sales", "marketing",
+    "crm", "erp", "sap", "oracle",
+    # --- Healthcare & PII ---
+    "patient", "medical", "health", "hipaa", "insurance", "claims",
+    "records", "pii", "ssn", "dob", "personal",
+    # --- Media & Content ---
+    "video", "videos", "audio", "photo", "photos", "gallery", "thumbnails",
+    "attachments", "email", "emails", "mail", "newsletter", "blog",
+    # --- Mobile & IoT ---
+    "mobile", "ios", "android", "firmware", "iot", "device", "devices",
+    "telemetry", "sensor", "sensors",
+    # --- Misc High-Frequency ---
+    "cache", "scratch", "raw", "processed", "output", "input", "ingest",
+    "landing", "source", "dist", "distribution", "bundle", "vendor",
+    "third-party", "thirdparty", "plugin", "plugins", "extension",
+    "survey", "feedback", "support", "ticket", "tickets", "helpdesk",
 ]
 
 SUFFIXES = [
-    "backup", "bak", "data", "dev", "staging", "prod", "bucket", "store",
-    "storage", "assets", "static", "public", "private", "files", "media",
-    "uploads", "archive", "db", "logs", "2023", "2024", "2025", "2026", "test",
+    "backup", "bak", "backups", "data", "dev", "staging", "stg", "prod",
+    "bucket", "store", "storage", "assets", "static", "public", "private",
+    "files", "media", "uploads", "archive", "db", "logs", "test", "qa",
+    "2022", "2023", "2024", "2025", "2026", "v1", "v2", "v3",
+    "us", "eu", "asia", "west", "east", "central",
+    "old", "new", "temp", "tmp", "cache", "cdn", "web", "api", "app",
+    "internal", "external", "share", "shared", "dump", "export", "raw",
+    "open", "misc", "general", "main", "primary", "secondary",
 ]
 
 SEPARATORS = ["-", ".", "_", ""]
