@@ -361,24 +361,24 @@ def get_trend_data(days: int = 30) -> dict:
     with get_db() as db:
         # Buckets discovered per day
         bucket_trend = db.execute("""
-            SELECT SUBSTRING(first_seen, 1, 10) as day, COUNT(*) as count,
+            SELECT SUBSTRING(CAST(first_seen AS VARCHAR), 1, 10) as day, COUNT(*) as count,
                    SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_count
             FROM buckets WHERE first_seen >= %s
-            GROUP BY SUBSTRING(first_seen, 1, 10) ORDER BY day
+            GROUP BY SUBSTRING(CAST(first_seen AS VARCHAR), 1, 10) ORDER BY day
         """, (cutoff,)).fetchall()
 
         # Files indexed per day
         file_trend = db.execute("""
-            SELECT SUBSTRING(indexed_at, 1, 10) as day, COUNT(*) as count, SUM(size_bytes) as total_size
+            SELECT SUBSTRING(CAST(indexed_at AS VARCHAR), 1, 10) as day, COUNT(*) as count, SUM(size_bytes) as total_size
             FROM files WHERE indexed_at >= %s
-            GROUP BY SUBSTRING(indexed_at, 1, 10) ORDER BY day
+            GROUP BY SUBSTRING(CAST(indexed_at AS VARCHAR), 1, 10) ORDER BY day
         """, (cutoff,)).fetchall()
 
         # Status changes
         status_trend = db.execute("""
-            SELECT diff_type, COUNT(*) as count, SUBSTRING(created_at, 1, 10) as day
+            SELECT diff_type, COUNT(*) as count, SUBSTRING(CAST(created_at AS VARCHAR), 1, 10) as day
             FROM scan_diffs WHERE created_at >= %s
-            GROUP BY diff_type, SUBSTRING(created_at, 1, 10) ORDER BY day
+            GROUP BY diff_type, SUBSTRING(CAST(created_at AS VARCHAR), 1, 10) ORDER BY day
         """, (cutoff,)).fetchall()
 
     return {
