@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-# CloudScan — Run a Discovery Scan
+# BucketAudit — Run a Discovery Scan
 #
 # Usage:
 #   ./scripts/scan.sh -k "backup,credentials,secret" -c "acme-corp" -p "aws,gcp"
@@ -50,7 +50,7 @@ if [ -d "backend/venv" ]; then
     source backend/venv/bin/activate
 fi
 
-echo "☁  CloudScan — Discovery Scan"
+echo "☁  BucketAudit — Discovery Scan"
 echo ""
 echo "  Keywords:   ${KEYWORDS:-none}"
 echo "  Companies:  ${COMPANIES:-none}"

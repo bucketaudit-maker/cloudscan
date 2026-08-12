@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-# CloudScan — Start Development Servers
+# BucketAudit — Start Development Servers
 # Launches backend and frontend in parallel with colored output.
 # Run: ./scripts/dev.sh
 # ═══════════════════════════════════════════════════════════════════
@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${CYAN}"
-echo "   ☁  CloudScan — Development Servers"
+echo "   ☁  BucketAudit — Development Servers"
 echo -e "${NC}"
 
 # Check if .env exists

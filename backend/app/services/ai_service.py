@@ -446,7 +446,7 @@ def _generate_rule_based_report(scan_data: dict) -> dict:
     )
 
     report = f"""## Executive Summary
-CloudScan discovered **{total_b} buckets** across cloud providers, of which **{open_b}** are publicly accessible containing **{total_f}** indexed files. {"Sensitive files were detected requiring immediate attention." if sensitive_count > 0 else "No sensitive files were detected in this scan."}
+BucketAudit discovered **{total_b} buckets** across cloud providers, of which **{open_b}** are publicly accessible containing **{total_f}** indexed files. {"Sensitive files were detected requiring immediate attention." if sensitive_count > 0 else "No sensitive files were detected in this scan."}
 
 ## Key Findings
 - {open_b} publicly accessible buckets found

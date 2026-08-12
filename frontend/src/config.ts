@@ -1,7 +1,7 @@
 /**
  * Environment-based API configuration.
  * - Local/dev: leave VITE_API_URL unset → uses relative /api/v1 (Vite proxy or same host).
- * - Production (API on different host): set VITE_API_URL=https://api.yourdomain.com at build time.
+ * - Production (API on different host): set VITE_API_URL=https://api.bucketaudit.com at build time.
  */
 const raw = typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_URL;
 const origin = typeof raw === "string" && raw.trim() ? (raw as string).replace(/\/+$/, "") : "";

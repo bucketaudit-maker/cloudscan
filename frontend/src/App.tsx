@@ -311,7 +311,7 @@ export default function App() {
         <div onClick={e=>e.stopPropagation()} className="card-static fade-in" style={{width:520,padding:40,textAlign:'center',borderRadius:16}}>
           <div style={{width:56,height:56,borderRadius:14,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:28,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900,marginBottom:16}}>☁</div>
           <h2 style={{fontSize:24,fontWeight:700,fontFamily:'var(--font-display)',margin:'0 0 8px'}}>Welcome, <span style={{color:'var(--accent)'}}>{user.username}</span>!</h2>
-          <p style={{fontSize:13,color:'var(--text-tertiary)',margin:'0 0 28px'}}>Your CloudScan account is ready. Here's what you can do:</p>
+          <p style={{fontSize:13,color:'var(--text-tertiary)',margin:'0 0 28px'}}>Your BucketAudit account is ready. Here's what you can do:</p>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:28}}>
             {[['⟳','Scan','Discover exposed buckets across cloud providers'],['⌕','Search','Find sensitive files with full-text & regex search'],['◉','Monitor','Set up watchlists for continuous monitoring'],['✦','AI','Get AI-powered security insights']].map(([ic,t,d]:any)=>
               <div key={t} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:16,textAlign:'left'}}>
@@ -331,26 +331,38 @@ export default function App() {
       <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'0 16px',height:48,display:'flex',alignItems:'center',gap:12,flexWrap:'nowrap'}}>
         <div onClick={()=>setView('home')} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:24,height:24,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900}}>☁</div>
-          <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></span></div>
+          <span style={{fontFamily:'var(--font-display)',fontWeight:700,fontSize:15,color:'var(--text-primary)',letterSpacing:'-0.5px'}}>Bucket<span style={{color:'var(--accent)'}}>Audit</span></span></div>
         {(()=>{
-          const NB=({id,l,ic}:{id:string,l:string,ic:string})=><button onClick={()=>navGo(id)}
+          const NB=({id,l,ic}:{id:string,l:string,ic:string})=><button className="nav-primary-item" onClick={()=>navGo(id)}
             style={{background:view===id?'var(--bg-tertiary)':'transparent',border:view===id?'1px solid var(--border-default)':'1px solid transparent',color:view===id?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontWeight:view===id?600:400,fontFamily:'var(--font-body)',transition:'all 0.15s',whiteSpace:'nowrap' as const,flexShrink:0}}>
             <span style={{marginRight:4,fontSize:10}}>{ic}</span>{l}
             {id==='monitor'&&monDash?.unread_alerts?<span style={{background:'var(--danger)',color:'#fff',fontSize:9,padding:'1px 5px',borderRadius:8,marginLeft:4}}>{monDash.unread_alerts}</span>:null}
           </button>
-          return <div style={{display:'flex',gap:2,flexWrap:'nowrap',alignItems:'center'}}>
+          const moreActive=['drift','compliance','intelligence','ai-insights','pricing'].includes(view)
+          return <div className="primary-nav" style={{display:'flex',gap:2,flexWrap:'nowrap',alignItems:'center',position:'relative'}}>
             <NB id="search" l="Files" ic="⌕"/>
             <NB id="buckets" l="Buckets" ic="◫"/>
             <NB id="scan" l="Scanner" ic="⟳"/>
             <NB id="monitor" l="Monitor" ic="◉"/>
             <NB id="dashboard" l="Dashboard" ic="◈"/>
-            <NB id="drift" l="Drift" ic="△"/>
-            <NB id="compliance" l="Compliance" ic="☑"/>
-            <NB id="intelligence" l="Intel" ic="⬡"/>
-            <NB id="ai-insights" l="AI" ic="✦"/>
-            <NB id="pricing" l="Pricing" ic="◇"/>
+            <button onClick={()=>setNavDropdown(navDropdown==='more'?null:'more')}
+              style={{background:moreActive||navDropdown==='more'?'var(--bg-tertiary)':'transparent',border:moreActive||navDropdown==='more'?'1px solid var(--border-default)':'1px solid transparent',color:moreActive?'var(--accent)':'var(--text-secondary)',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'var(--font-body)',whiteSpace:'nowrap' as const}}>
+              More <span style={{fontSize:8,marginLeft:3}}>{navDropdown==='more'?'▲':'▼'}</span>
+            </button>
+            {navDropdown==='more' && <div style={{position:'absolute',top:'calc(100% + 8px)',right:0,minWidth:190,padding:5,background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:'var(--radius-lg)',boxShadow:'var(--shadow-lg)',zIndex:201}}>
+              {([['drift','Drift Detection','△'],['compliance','Compliance','☑'],['intelligence','Intelligence','⬡'],['ai-insights','AI Insights','✦'],['pricing','Pricing','◇']]).map(([id,l,ic])=><button key={id} onClick={()=>navGo(id)}
+                style={{display:'flex',alignItems:'center',gap:9,width:'100%',padding:'9px 11px',background:view===id?'var(--bg-tertiary)':'transparent',border:'none',borderRadius:7,color:view===id?'var(--accent)':'var(--text-secondary)',fontSize:12,textAlign:'left',fontFamily:'var(--font-body)'}}>
+                <span style={{width:16,textAlign:'center'}}>{ic}</span>{l}
+              </button>)}
+            </div>}
           </div>
         })()}
+        <div style={{position:'relative'}}>
+          <button className="mobile-nav-trigger" onClick={()=>setNavDropdown(navDropdown==='mobile'?null:'mobile')}>Menu <span>{navDropdown==='mobile'?'▲':'▼'}</span></button>
+          {navDropdown==='mobile' && <div className="mobile-nav-menu">
+            {([['search','Files','⌕'],['buckets','Buckets','◫'],['scan','Scanner','⟳'],['monitor','Monitor','◉'],['dashboard','Dashboard','◈'],['drift','Drift Detection','△'],['compliance','Compliance','☑'],['intelligence','Intelligence','⬡'],['ai-insights','AI Insights','✦'],['pricing','Pricing','◇']]).map(([id,l,ic])=><button key={id} onClick={()=>navGo(id)} className={view===id?'active':''}><span>{ic}</span>{l}</button>)}
+          </div>}
+        </div>
         <div style={{flex:1,minWidth:0}}/>
         <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <button onClick={()=>setTheme(theme==='dark'?'light':'dark')} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,padding:'3px 7px',cursor:'pointer',fontSize:13,color:'var(--text-secondary)',lineHeight:1}} title={theme==='dark'?'Switch to light mode':'Switch to dark mode'}>{theme==='dark'?'☀':'☾'}</button>
@@ -407,7 +419,7 @@ export default function App() {
         <div className="card-static fade-in" style={{width:420,padding:40}}>
           <div style={{textAlign:'center',marginBottom:32}}>
             <div style={{width:48,height:48,borderRadius:12,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:24,background:'linear-gradient(135deg,var(--accent),#00c568)',color:'#000',fontWeight:900,marginBottom:12}}>☁</div>
-            <h2 style={{fontSize:24,fontWeight:700,fontFamily:'var(--font-display)',margin:'0 0 4px'}}>Cloud<span style={{color:'var(--accent)'}}>Scan</span></h2>
+            <h2 style={{fontSize:24,fontWeight:700,fontFamily:'var(--font-display)',margin:'0 0 4px'}}>Bucket<span style={{color:'var(--accent)'}}>Audit</span></h2>
             <p style={{fontSize:12,color:'var(--text-muted)',margin:0}}>
               {authMode==='login'?'Sign in to your account':authMode==='register'?'Create a new account':authMode==='forgot'?'Reset your password':'Set a new password'}
             </p></div>
@@ -462,89 +474,35 @@ export default function App() {
         </div></div>}
 
       {/* ─── HOME ─── */}
-      {view==='home' && <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',background:'radial-gradient(ellipse 80% 50% at 50% -20%,#00e87b06 0%,transparent 60%),var(--bg-primary)',position:'relative',overflow:'hidden'}}>
-        <div style={{position:'absolute',inset:0,opacity:0.025,backgroundImage:'linear-gradient(var(--accent) 1px,transparent 1px),linear-gradient(90deg,var(--accent) 1px,transparent 1px)',backgroundSize:'60px 60px'}}/>
-        <div style={{position:'relative',textAlign:'center',maxWidth:800,padding:'80px 24px 40px'}}>
-          {stats?.providers && <div style={{display:'flex',justifyContent:'center',gap:32,marginBottom:48}} className="fade-in">{stats.providers.map((p:any)=><div key={p.name} style={{textAlign:'center'}}><div style={{fontSize:24,fontWeight:800,fontFamily:'var(--font-display)',color:PC[p.name]?.bg||'#fff'}}>{fnum(p.bucket_count)}</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{PL[p.name]||p.name}</div></div>)}</div>}
-          <h1 style={{fontSize:52,fontWeight:800,lineHeight:1.05,margin:'0 0 16px',fontFamily:'var(--font-display)',background:'linear-gradient(135deg,var(--text-primary) 0%,var(--text-secondary) 100%)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}} className="fade-in">Search Open<br/>Cloud Storage</h1>
-          <p style={{fontSize:14,color:'var(--text-tertiary)',lineHeight:1.6,margin:'0 auto 40px',maxWidth:520}}>Discover exposed buckets & files across <span style={{color:'var(--aws)'}}>AWS</span>, <span style={{color:'var(--azure)'}}>Azure</span>, <span style={{color:'var(--gcp)'}}>GCP</span>, <span style={{color:'var(--digitalocean)'}}>DigitalOcean</span> & <span style={{color:'var(--alibaba)'}}>Alibaba</span></p>
-          <div style={{position:'relative',maxWidth:620,margin:'0 auto 24px'}} className="slide-up">
-            <div style={{display:'flex',background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,overflow:'hidden',boxShadow:'0 0 40px var(--accent-glow),0 4px 24px rgba(0,0,0,0.4)'}}>
-              <span style={{display:'flex',alignItems:'center',padding:'0 16px',color:'var(--text-muted)',fontSize:18}}>⌕</span>
-              <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search files... (.env, backup.sql, credentials)" style={{flex:1,background:'none',border:'none',color:'var(--text-primary)',fontSize:15,padding:'16px 0',fontFamily:'var(--font-body)'}}/>
-              <button onClick={()=>doSearch(heroQ)} className="btn-primary" style={{padding:'0 28px',fontSize:13,fontFamily:'var(--font-body)',letterSpacing:'0.5px'}}>SEARCH</button></div></div>
-          <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>{['.env','backup.sql','credentials.json','id_rsa','terraform.tfstate','.key','*.csv'].map(q=><button key={q} onClick={()=>{setHeroQ(q);doSearch(q)}} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'6px 14px',color:'var(--text-tertiary)',fontSize:12,cursor:'pointer',fontFamily:'var(--font-mono)',boxShadow:'var(--shadow-sm)'}}>{q}</button>)}</div>
-          {user && <div style={{marginTop:20,textAlign:'center'}}>
-            <button onClick={()=>{setScanForm({keywords:'backup, staging, dev, test, config',companies:'example',providers:[]});setView('scan');loadScanHistory()}} style={{background:'var(--bg-secondary)',border:'1px solid var(--accent)',borderRadius:10,padding:'12px 28px',cursor:'pointer',color:'var(--accent)',fontSize:13,fontWeight:600,fontFamily:'var(--font-body)',boxShadow:'0 0 20px var(--accent-glow)'}}>⟳ Try a Demo Scan</button>
-            <p style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>Pre-filled with common keywords to discover exposed buckets</p></div>}
-          {stats?.top_extensions && <div style={{marginTop:64,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(85px,1fr))',gap:8,maxWidth:550,margin:'64px auto 0'}}>{stats.top_extensions.slice(0,12).map((e:any)=><div key={e.extension} onClick={()=>doSearch(`*.${e.extension}`)} style={{background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:8,cursor:'pointer',textAlign:'center'}}>
-            <span style={{fontSize:16}}>{EI[e.extension]||'📄'}</span><div style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>.{e.extension}</div><div style={{fontSize:10,color:'var(--text-muted)'}}>{fnum(e.count)}</div></div>)}</div>}
+      {view==='home' && <main className="home-shell">
+        <div className="home-grid"/>
+        <section className="home-content fade-in">
+          <div className="home-eyebrow"><span/>CLOUD EXPOSURE SEARCH</div>
+          <h1>Find exposed cloud files.</h1>
+          <p className="home-subtitle">Search indexed public storage across AWS, Azure, GCP, DigitalOcean, and Alibaba Cloud.</p>
 
-          {/* Onboarding Checklist */}
-          {user && !onboarding.dismissed && <div className="card-static" style={{marginTop:40,maxWidth:600,margin:'40px auto 0',padding:24,textAlign:'left'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-              <div><div style={{fontSize:14,fontWeight:700,fontFamily:'var(--font-display)',color:'var(--text-primary)'}}>Getting Started</div>
-                <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{[true,onboarding.firstScan,onboarding.firstSearch,onboarding.firstMonitor].filter(Boolean).length}/4 complete</div></div>
-              <button onClick={()=>setOnboarding(o=>({...o,dismissed:true}))} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:14,padding:4}}>✕</button></div>
-            <div style={{background:'var(--bg-primary)',borderRadius:4,height:4,marginBottom:16,overflow:'hidden'}}><div style={{height:'100%',background:'linear-gradient(90deg,var(--accent),#00c568)',borderRadius:4,width:`${[true,onboarding.firstScan,onboarding.firstSearch,onboarding.firstMonitor].filter(Boolean).length*25}%`,transition:'width 0.5s'}}/></div>
-            {([
-              [true,'Registered','Create your CloudScan account',null],
-              [onboarding.firstScan,'First Scan','Run a discovery scan to find exposed buckets',()=>{setScanForm({keywords:'backup, staging, dev, test',companies:'example',providers:[]});setView('scan');loadScanHistory()}],
-              [onboarding.firstSearch,'First Search','Search for exposed files in the database',()=>{setView('search');setTimeout(()=>ref.current?.focus(),100)}],
-              [onboarding.firstMonitor,'Set Up Monitoring','Create a watchlist for continuous monitoring',()=>loadMonitor()]
-            ] as [boolean,string,string,(()=>void)|null][]).map(([done,title,desc,action])=>
-              <div key={title} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border-subtle)'}}>
-                <div style={{width:22,height:22,borderRadius:'50%',border:`2px solid ${done?'var(--accent)':'var(--border-default)'}`,background:done?'var(--accent)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,color:done?'#000':'transparent',flexShrink:0}}>{done?'✓':''}</div>
-                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:done?'var(--text-tertiary)':'var(--text-primary)',textDecoration:done?'line-through':'none'}}>{title}</div>
-                  <div style={{fontSize:11,color:'var(--text-muted)'}}>{desc}</div></div>
-                {!done&&action&&<button onClick={action} style={{background:'var(--accent-bg)',border:'1px solid rgba(0,232,123,0.2)',color:'var(--accent)',padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:600,whiteSpace:'nowrap' as const}}>Start</button>}
-              </div>)}</div>}
+          <div className="home-search slide-up">
+            <span aria-hidden="true">⌕</span>
+            <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search by filename, extension, or keyword"/>
+            <button onClick={()=>doSearch(heroQ)} className="btn-primary">Search</button>
+          </div>
 
-          {/* Dashboard Analytics */}
-          {(dashBreakdown || dashTimeline) && <div style={{marginTop:64,maxWidth:900,margin:'64px auto 0'}}>
-            <h3 style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-display)',textAlign:'center',marginBottom:24,color:'var(--text-secondary)'}}>Analytics</h3>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+          <div className="home-examples"><span>Try</span>{['.env','backup.sql','credentials.json','*.csv'].map(q=><button key={q} onClick={()=>{setHeroQ(q);doSearch(q)}}>{q}</button>)}</div>
 
-              {/* Risk Distribution */}
-              {dashBreakdown?.risk_distribution && <div style={{padding:20}} className="card-static">
-                <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Risk Levels</div>
-                {dashBreakdown.risk_distribution.length>0 ? dashBreakdown.risk_distribution.map((r:any)=>{const mx=Math.max(...dashBreakdown.risk_distribution.map((x:any)=>x.count));const pct=mx?(r.count/mx)*100:0;const rc:any={critical:'#f04848',high:'#ff6b35',medium:'#f5a623',low:'#4a9eff',info:'#4a5f73'};return <div key={r.risk_level} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                  <span style={{width:70,fontSize:10,color:rc[r.risk_level]||'var(--text-secondary)',fontWeight:600,textTransform:'uppercase' as const}}>{r.risk_level}</span>
-                  <div style={{flex:1,background:'var(--bg-primary)',borderRadius:4,height:16,overflow:'hidden'}}><div style={{width:`${pct}%`,height:'100%',background:rc[r.risk_level]||'var(--accent)',borderRadius:4,transition:'width 0.5s'}}/></div>
-                  <span style={{width:40,fontSize:10,color:'var(--text-muted)',textAlign:'right'}}>{fnum(r.count)}</span></div>})
-                : <div style={{fontSize:11,color:'var(--text-muted)',textAlign:'center',padding:20}}>No risk data yet</div>}
-              </div>}
-            </div>
-
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-              {/* Status Distribution */}
-              {dashBreakdown?.status_distribution && <div style={{padding:20}} className="card-static">
-                <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Bucket Status</div>
-                {dashBreakdown.status_distribution.map((s:any)=>{const sc:any={open:'var(--accent)',closed:'#f04848',partial:'var(--warning)'};return <div key={s.status} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                  <span style={{width:70,fontSize:10,color:sc[s.status]||'var(--text-secondary)',fontWeight:600,textTransform:'uppercase' as const}}>{s.status}</span>
-                  <div style={{flex:1,background:'var(--bg-primary)',borderRadius:4,height:16,overflow:'hidden'}}><div style={{width:'100%',height:'100%',background:sc[s.status]||'var(--text-muted)',borderRadius:4,opacity:0.4}}/></div>
-                  <span style={{width:40,fontSize:10,color:'var(--text-muted)',textAlign:'right'}}>{fnum(s.count)}</span></div>})}
-              </div>}
-
-              {/* Discovery Timeline */}
-              {dashTimeline?.files_timeline && <div style={{padding:20}} className="card-static">
-                <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>Files Discovered (30d)</div>
-                {dashTimeline.files_timeline.length>0 ? <div style={{display:'flex',alignItems:'flex-end',gap:2,height:80}}>
-                  {dashTimeline.files_timeline.map((d:any,i:number)=>{const mx=Math.max(...dashTimeline.files_timeline.map((x:any)=>x.count));const h=mx?(d.count/mx)*100:0;return <div key={i} title={`${d.day}: ${d.count} files`} style={{flex:1,background:'var(--accent)',borderRadius:'2px 2px 0 0',height:`${Math.max(h,2)}%`,opacity:0.7,transition:'height 0.3s',minWidth:2}}/>})}
-                </div> : <div style={{fontSize:11,color:'var(--text-muted)',textAlign:'center',padding:20}}>No timeline data yet</div>}
-              </div>}
-            </div>
-
-            {/* Classification Breakdown */}
-            {dashBreakdown?.classification_distribution && dashBreakdown.classification_distribution.length>0 && <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,marginTop:16}}>
-              <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase' as const,letterSpacing:'1px',marginBottom:12}}>File Classifications</div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:8}}>
-                {dashBreakdown.classification_distribution.map((c:any)=><div key={c.ai_classification} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:12,display:'flex',alignItems:'center',gap:8}}>
-                  <ClassBadge c={c.ai_classification}/><span style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-display)',color:'var(--text-secondary)'}}>{fnum(c.count)}</span></div>)}
-              </div>
-            </div>}
+          {user && <div className="home-actions">
+            <button className="home-action-primary" onClick={()=>{setScanForm({keywords:'backup, staging, dev, test, config',companies:'example',providers:[]});setView('scan');loadScanHistory()}}><span>⟳</span><div><strong>Start a scan</strong><small>Discover cloud buckets</small></div></button>
+            <button className="home-action" onClick={()=>loadMonitor()}><span>◉</span><div><strong>Set up monitoring</strong><small>Watch assets continuously</small></div></button>
           </div>}
-        </div></div>}
+
+          {stats && <div className="home-summary">
+            <div><strong>{fnum(stats.total_buckets)}</strong><span>Buckets</span></div>
+            <div><strong className="home-open-count">{fnum(stats.open_buckets)}</strong><span>Open</span></div>
+            <div><strong>{fnum(stats.total_files)}</strong><span>Files</span></div>
+            <div><strong>{fmt(stats.total_size_bytes)}</strong><span>Indexed</span></div>
+            <button onClick={()=>navGo('dashboard')}>View dashboard <span>→</span></button>
+          </div>}
+        </section>
+      </main>}
 
       {/* ─── SEARCH ─── */}
       {view==='search' && <div style={{padding:'80px 24px 24px',maxWidth:1200,margin:'0 auto'}}>
@@ -982,7 +940,7 @@ export default function App() {
         <div style={{padding:24,marginBottom:16}} className="card-static">
           <h3 style={{fontSize:14,marginBottom:16,color:'var(--text-secondary)'}}>API Key</h3>
           <div style={{display:'flex',alignItems:'center',gap:12}}>
-            <div style={{flex:1,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',fontFamily:'var(--font-mono)',fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{showApiKey?user.api_key:'cs_••••••••••••••••••••••••••••••'}</div>
+            <div style={{flex:1,background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',fontFamily:'var(--font-mono)',fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{showApiKey?user.api_key:'ba_••••••••••••••••••••••••••••••'}</div>
             <button onClick={()=>setShowApiKey(!showApiKey)} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--text-muted)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>{showApiKey?'Hide':'Show'}</button>
             <button onClick={()=>{navigator.clipboard.writeText(user.api_key);setCopiedKey(true);setTimeout(()=>setCopiedKey(false),2000)}} style={{background:copiedKey?'var(--accent-bg)':'var(--bg-primary)',border:`1px solid ${copiedKey?'rgba(0,232,123,0.3)':'var(--border-subtle)'}`,color:copiedKey?'var(--accent)':'var(--text-muted)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11,transition:'all 0.2s'}}>{copiedKey?'Copied!':'Copy'}</button>
             <button onClick={rotateApiKey} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',color:'var(--warning)',padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:11}}>Rotate</button>
@@ -1373,7 +1331,7 @@ export default function App() {
           {tag:'Auth',m:'POST',p:'/auth/register',d:'Create a new account',auth:'none',
             params:[{n:'email',t:'string',r:true,d:'User email address'},{n:'username',t:'string',r:true,d:'Display name (min 2 chars)'},{n:'password',t:'string',r:true,d:'Password (min 6 chars)'}],
             reqSample:'{\n  "email": "user@example.com",\n  "username": "johndoe",\n  "password": "securePass123"\n}',
-            resSample:'{\n  "token": "eyJhbGci...jwt_token",\n  "user": {\n    "id": 1,\n    "email": "user@example.com",\n    "username": "johndoe",\n    "tier": "free",\n    "api_key": "cs_a1b2c3d4e5f6..."\n  }\n}',
+            resSample:'{\n  "token": "eyJhbGci...jwt_token",\n  "user": {\n    "id": 1,\n    "email": "user@example.com",\n    "username": "johndoe",\n    "tier": "free",\n    "api_key": "ba_a1b2c3d4e5f6..."\n  }\n}',
             errors:[{c:400,d:'Email already registered or invalid input'}]},
           {tag:'Auth',m:'POST',p:'/auth/login',d:'Login with credentials',auth:'none',
             params:[{n:'email',t:'string',r:true,d:'Account email'},{n:'password',t:'string',r:true,d:'Account password'}],
@@ -1382,10 +1340,10 @@ export default function App() {
             notes:'If 2FA is enabled, returns { "requires_2fa": true, "temp_token": "..." } instead. Use /auth/2fa/verify to complete login.',
             errors:[{c:401,d:'Invalid email or password'},{c:429,d:'Too many login attempts'}]},
           {tag:'Auth',m:'GET',p:'/auth/me',d:'Get current user profile',auth:'strict',
-            resSample:'{\n  "id": 1,\n  "email": "user@example.com",\n  "username": "johndoe",\n  "tier": "free",\n  "api_key": "cs_a1b2c3...",\n  "totp_enabled": false,\n  "queries_today": 12,\n  "joined_at": "2026-03-01T00:00:00Z"\n}',
+            resSample:'{\n  "id": 1,\n  "email": "user@example.com",\n  "username": "johndoe",\n  "tier": "free",\n  "api_key": "ba_a1b2c3...",\n  "totp_enabled": false,\n  "queries_today": 12,\n  "joined_at": "2026-03-01T00:00:00Z"\n}',
             errors:[{c:401,d:'Authentication required'}]},
           {tag:'Auth',m:'POST',p:'/auth/2fa/setup',d:'Initialize TOTP 2FA setup',auth:'strict',
-            resSample:'{\n  "secret": "JBSWY3DPEHPK3PXP",\n  "uri": "otpauth://totp/CloudScan:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=CloudScan"\n}',
+            resSample:'{\n  "secret": "JBSWY3DPEHPK3PXP",\n  "uri": "otpauth://totp/BucketAudit:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=BucketAudit"\n}',
             notes:'Add the secret to an authenticator app, then confirm with /auth/2fa/confirm.',
             errors:[{c:401,d:'Authentication required'},{c:400,d:'2FA already enabled'}]},
           {tag:'Auth',m:'POST',p:'/auth/2fa/confirm',d:'Confirm 2FA with TOTP code',auth:'strict',
@@ -1400,7 +1358,7 @@ export default function App() {
             resSample:'{\n  "token": "eyJhbGci...jwt_token",\n  "user": { "id": 1, "username": "johndoe" }\n}',
             errors:[{c:401,d:'Invalid or expired temp_token'},{c:401,d:'Invalid TOTP code'}]},
           {tag:'Auth',m:'POST',p:'/auth/rotate-key',d:'Generate new API key',auth:'strict',
-            resSample:'{ "api_key": "cs_new_key_a1b2c3d4e5f6..." }',
+            resSample:'{ "api_key": "ba_new_key_a1b2c3d4e5f6..." }',
             notes:'Old API key is immediately invalidated.',
             errors:[{c:401,d:'Authentication required'}]},
           {tag:'Files',m:'GET',p:'/files',d:'Full-text + regex file search',auth:'optional',
@@ -1470,7 +1428,7 @@ export default function App() {
             resSample:'{\n  "risk_score": 85,\n  "risk_level": "critical",\n  "factors": [\n    "Contains credentials files (.env, .pem)",\n    "Large number of exposed files (342)",\n    "PII detected in 12 files"\n  ]\n}',
             errors:[{c:404,d:'Bucket not found'},{c:503,d:'AI provider unavailable'}]},
           {tag:'AI',m:'POST',p:'/ai/report',d:'Generate AI security report',auth:'strict',ai:true,
-            resSample:'{\n  "report": "## CloudScan Security Report\\n\\n### Executive Summary\\n...",\n  "generated_at": "2026-03-22T10:00:00Z"\n}',
+            resSample:'{\n  "report": "## BucketAudit Security Report\\n\\n### Executive Summary\\n...",\n  "generated_at": "2026-03-22T10:00:00Z"\n}',
             errors:[{c:401,d:'Authentication required'},{c:503,d:'AI provider unavailable'}]},
           {tag:'Drift',m:'GET',p:'/drift/diffs',d:'List scan drift changes',auth:'strict',
             params:[{n:'severity',t:'string',r:false,d:'critical | high | medium | low | info'},{n:'unreviewed',t:'boolean',r:false,d:'Only unreviewed diffs'},{n:'page',t:'integer',r:false,d:'Page number'},{n:'per_page',t:'integer',r:false,d:'Results per page'}],
@@ -1662,7 +1620,7 @@ export default function App() {
                 ['What happens when I hit my scan limit?','You will receive a clear error message. Scheduled scans that exceed your limit are queued and run when your quota resets.'],
                 ['Is there a free trial for Pro?','New accounts get a 14-day Pro trial with full access. No credit card required.'],
                 ['Can I downgrade my plan?','Yes, you can downgrade at any time. The change takes effect at your next billing cycle. Your data is retained.'],
-                ['Do you offer annual billing?','Yes! Annual plans save 20%. Contact us at billing@cloudscan.io for annual pricing.'],
+                ['Do you offer annual billing?','Yes! Annual plans save 20%. Contact us at bucketaudit@gmail.com for annual pricing.'],
               ].map(([q,a],i)=><div key={i} className="card-static" style={{padding:20}}>
                 <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)',marginBottom:8}}>{q}</div>
                 <div style={{fontSize:12,color:'var(--text-secondary)',lineHeight:1.6}}>{a}</div>

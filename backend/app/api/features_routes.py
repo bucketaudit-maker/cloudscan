@@ -354,7 +354,7 @@ def generate_executive_report():
         """).fetchall()
 
     report = {
-        "title": "CloudScan Executive Security Report",
+        "title": "BucketAudit Executive Security Report",
         "generated_at": datetime.utcnow().isoformat(),
         "summary": {
             "total_buckets": stats[0],

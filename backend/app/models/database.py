@@ -6,8 +6,6 @@ import logging
 import os
 import secrets
 import sqlite3
-import subprocess
-import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -659,24 +657,25 @@ def init_db() -> str:
     """Initialize database: Postgres = run migrations + seed providers; SQLite = create tables + seed."""
     if settings.is_postgres:
         backend_dir = Path(__file__).resolve().parent.parent.parent
-        alembic_cmd = Path(sys.executable).with_name("alembic")
-        if not alembic_cmd.exists():
+        try:
+            from alembic import command
+            from alembic.config import Config
+        except ImportError as exc:
             msg = (
-                f"Alembic CLI not found at {alembic_cmd}. "
-                "Install backend dependencies in this virtualenv "
+                "Alembic is not installed in the active Python environment. "
+                "Use backend/venv/bin/python3 or install backend dependencies "
                 "(for example: pip install -r backend/requirements.txt)."
             )
             logger.error(msg)
-            raise RuntimeError(msg)
-        result = subprocess.run(
-            [str(alembic_cmd), "upgrade", "head"],
-            cwd=backend_dir,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            logger.error(f"Alembic upgrade failed: {result.stderr}")
-            raise RuntimeError(f"Migration failed: {result.stderr}")
+            raise RuntimeError(msg) from exc
+
+        try:
+            alembic_cfg = Config(str(backend_dir / "alembic.ini"))
+            alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+            command.upgrade(alembic_cfg, "head")
+        except Exception as exc:
+            logger.exception("Alembic upgrade failed")
+            raise RuntimeError(f"Migration failed: {exc}") from exc
         logger.info("PostgreSQL migrations applied")
         with _get_db() as db:
             for pid, name, display, term, pattern in SEED_PROVIDERS:

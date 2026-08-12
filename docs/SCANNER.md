@@ -1,4 +1,4 @@
-# CloudScan Scanner Engine — Architecture
+# BucketAudit Scanner Engine — Architecture
 
 ## Overview
 

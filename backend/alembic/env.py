@@ -10,6 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, repo_root)
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(repo_root, ".env"))
+
 from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine
@@ -37,10 +40,7 @@ target_metadata = None
 
 
 def get_url() -> str:
-    url = settings.DATABASE_URL
-    if not url.strip().lower().startswith("postgresql"):
-        raise ValueError("Alembic migrations require PostgreSQL. Set DATABASE_URL to a postgresql:// URL.")
-    return url
+    return settings.DATABASE_URL
 
 
 def run_migrations_offline() -> None:

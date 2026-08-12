@@ -109,7 +109,7 @@ def register_default_handlers():
             if not user_id:
                 return
             alert = {
-                "title": f"CloudScan: {payload['event']}",
+                "title": f"BucketAudit: {payload['event']}",
                 "severity": data.get("severity", "medium"),
                 "description": str(data),
             }

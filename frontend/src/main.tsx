@@ -15,7 +15,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
     return { hasError: true, error }
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('CloudScan error:', error, info.componentStack)
+    console.error('BucketAudit error:', error, info.componentStack)
   }
   render() {
     if (this.state.hasError) {

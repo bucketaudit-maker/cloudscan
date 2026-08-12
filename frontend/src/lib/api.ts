@@ -1,5 +1,5 @@
 /**
- * CloudScan API Client with Server-Sent Events for real-time scan streaming.
+ * BucketAudit API Client with Server-Sent Events for real-time scan streaming.
  */
 
 import { API_BASE } from '../config';

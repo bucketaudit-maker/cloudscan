@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-# CloudScan — Local Development Setup
+# BucketAudit — Local Development Setup
 # Run: ./scripts/setup.sh
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -20,7 +20,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo -e "${CYAN}"
-echo "   ☁  CloudScan — Setup"
+echo "   ☁  BucketAudit — Setup"
 echo -e "${NC}"
 
 # ── Preflight ──────────────────────────────────────────────────
@@ -106,7 +106,7 @@ echo "  Open in browser:"
 echo -e "    ${CYAN}http://localhost:5173${NC}"
 echo ""
 echo "  Demo credentials:"
-echo -e "    Email:    ${YELLOW}demo@cloudscan.io${NC}"
+echo -e "    Email:    ${YELLOW}demo@bucketaudit.com${NC}"
 echo -e "    Password: ${YELLOW}demo1234${NC}"
-echo -e "    API Key:  ${YELLOW}cs_demo_key_for_testing_purposes_only${NC}"
+echo -e "    API Key:  ${YELLOW}ba_demo_key_for_testing_purposes_only${NC}"
 echo ""
