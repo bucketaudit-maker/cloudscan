@@ -1,5 +1,5 @@
 """
-Tests for CloudScan backend.
+Tests for BucketAudit backend.
 Run: python -m pytest backend/tests/ -v
 """
 import json
@@ -174,7 +174,7 @@ class TestAPI:
         data = r.get_json()
         assert "token" in data
         assert "api_key" in data
-        assert data["api_key"].startswith("cs_")
+        assert data["api_key"].startswith("ba_")
 
         # Login
         r = client.post("/api/v1/auth/login", json={

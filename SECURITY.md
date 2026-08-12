@@ -8,13 +8,13 @@
 
 ## Reporting a Vulnerability
 
-We take the security of CloudScan seriously. If you discover a security vulnerability, please report it responsibly.
+We take the security of BucketAudit seriously. If you discover a security vulnerability, please report it responsibly.
 
 **DO NOT** open a public GitHub issue for security vulnerabilities.
 
 ### How to Report
 
-1. Email: Send details to **security@cloudscan.dev**
+1. Email: Send details to **bucketaudit@gmail.com**
 2. Include:
    - Description of the vulnerability
    - Steps to reproduce

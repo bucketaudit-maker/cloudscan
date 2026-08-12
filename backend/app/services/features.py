@@ -1,5 +1,5 @@
 """
-Features Service — All 20 new features for CloudScan Sprint 7.
+Features Service — All 20 new features for BucketAudit Sprint 7.
 
 Features:
   Discovery: 1. Subdomain bucket discovery, 2. GitHub leak scanning,
@@ -614,7 +614,7 @@ def export_siem_events(format: str = "cef", since_hours: int = 24) -> list[str]:
             severity_map = {"critical": 10, "high": 8, "medium": 5, "low": 3, "info": 1}
             sev = severity_map.get(row.get("severity", "info"), 1)
             cef = (
-                f"CEF:0|CloudScan|BucketAudit|1.0|{row.get('alert_type', 'unknown')}|"
+                f"CEF:0|BucketAudit|Cloud Storage Security|1.0|{row.get('alert_type', 'unknown')}|"
                 f"{row.get('title', '')}|{sev}|"
                 f"src={row.get('bucket_url', '')} "
                 f"cs1={row.get('bucket_name', '')} cs1Label=BucketName "
@@ -631,7 +631,7 @@ def export_siem_events(format: str = "cef", since_hours: int = 24) -> list[str]:
                 "description": row.get("description"),
                 "bucket_name": row.get("bucket_name"),
                 "bucket_url": row.get("bucket_url"),
-                "source": "CloudScan",
+                "source": "BucketAudit",
             }))
     return events
 
@@ -733,7 +733,7 @@ Please investigate and take appropriate action to secure this resource.
 
 Regards,
 [Your Name]
-CloudScan Security Platform"""
+BucketAudit Security Platform"""
 
 
 # ═══════════════════════════════════════════════════════════════════

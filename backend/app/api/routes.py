@@ -152,7 +152,18 @@ def _log_request(response):
 
 @api.route("/health")
 def health():
-    return jsonify({"status": "ok", "timestamp": datetime.utcnow().isoformat(), "version": "1.0.0"})
+    try:
+        with get_db() as db:
+            db.execute("SELECT 1")
+    except Exception:
+        logger.exception("Database health check failed")
+        return jsonify({"status": "unavailable", "version": "1.0.0"}), 503
+
+    return jsonify({
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -174,7 +185,7 @@ def swagger_ui():
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <title>CloudScan API — Swagger</title>
+  <title>BucketAudit API — Swagger</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
   <style>
     body { margin: 0; background: #fafafa; }
@@ -628,7 +639,7 @@ def export_files():
         return Response(
             json.dumps(items, default=str),
             mimetype="application/json",
-            headers={"Content-Disposition": f'attachment; filename="cloudscan-export-{timestamp}.json"'},
+            headers={"Content-Disposition": f'attachment; filename="bucketaudit-export-{timestamp}.json"'},
         )
 
     columns = ["filepath", "filename", "extension", "size_bytes", "url",
@@ -642,7 +653,7 @@ def export_files():
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="cloudscan-export-{timestamp}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="bucketaudit-export-{timestamp}.csv"'},
     )
 
 
@@ -1628,7 +1639,7 @@ def test_slack_notification():
         return jsonify({"error": "No Slack config found"}), 404
     config = configs[0] if isinstance(configs, list) else configs
     try:
-        _send_slack_message(config, "CloudScan Test", "This is a test notification from CloudScan.", "info")
+        _send_slack_message(config, "BucketAudit Test", "This is a test notification from BucketAudit.", "info")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2404,7 +2415,7 @@ def setup_2fa():
 
     # Build otpauth URI
     email = user["email"]
-    otpauth_uri = f"otpauth://totp/CloudScan:{email}?secret={secret_b32}&issuer=CloudScan&algorithm=SHA1&digits=6&period=30"
+    otpauth_uri = f"otpauth://totp/BucketAudit:{email}?secret={secret_b32}&issuer=BucketAudit&algorithm=SHA1&digits=6&period=30"
 
     return jsonify({
         "secret": secret_b32,

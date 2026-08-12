@@ -1,4 +1,4 @@
-# CloudScan API — Quick Reference
+# BucketAudit API — Quick Reference
 
 > **Full API documentation** with request/response examples: [`../API.md`](../API.md)
 
@@ -6,7 +6,7 @@ Base URL: `http://localhost:8000/api/v1`
 
 ## Authentication
 
-CloudScan supports three authentication methods:
+BucketAudit supports three authentication methods:
 
 ### Bearer Token (JWT)
 ```
@@ -16,13 +16,13 @@ Obtained from `/auth/login` or `/auth/register`. Expires after 24 hours.
 
 ### API Key (Header)
 ```
-X-API-Key: cs_your_api_key_here
+X-API-Key: ba_your_api_key_here
 ```
 Generated on registration. Does not expire.
 
 ### API Key (Query Parameter)
 ```
-GET /api/v1/files?q=backup&access_token=cs_your_api_key_here
+GET /api/v1/files?q=backup&access_token=ba_your_api_key_here
 ```
 
 ### CSRF Tokens

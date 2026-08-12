@@ -1,5 +1,5 @@
 """
-CloudScan API Server — Production Flask application factory.
+BucketAudit API Server — Production Flask application factory.
 
 Usage:
     python -m backend.app.main          # Development server
@@ -9,12 +9,17 @@ import logging
 import os
 import sys
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Load .env from repo root before importing settings
+_repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv(os.path.join(_repo_root, ".env"))
 
 from backend.app.config import settings
 from backend.app.models.database import init_db
@@ -42,7 +47,7 @@ def create_app() -> Flask:
         init_db()
     else:
         logging.getLogger(__name__).info("Skipping DB migration on API startup (RUN_DB_MIGRATIONS_ON_STARTUP=false)")
-    logging.getLogger(__name__).info(f"CloudScan API starting (env={settings.APP_ENV})")
+    logging.getLogger(__name__).info(f"BucketAudit API starting (env={settings.APP_ENV})")
 
     # Initialize AI providers
     if settings.AI_ENABLED:
@@ -108,7 +113,7 @@ def create_app() -> Flask:
     # Health check at root
     @app.route("/")
     def root():
-        return {"name": "CloudScan API", "version": "1.0.0", "docs": "/api/v1/health"}
+        return {"name": "BucketAudit API", "version": "1.0.0", "docs": "/api/v1/health"}
 
     return app
 

@@ -285,7 +285,7 @@ class BucketScanner:
             raise RuntimeError("aiohttp is required for scanning. Install: pip install aiohttp")
         self.concurrency = concurrency
         self.timeout = aiohttp.ClientTimeout(total=timeout)
-        self.user_agent = user_agent or "CloudScan/1.0 (Security Research)"
+        self.user_agent = user_agent or "BucketAudit/1.0 (Security Research; https://bucketaudit.com)"
         self.semaphore = asyncio.Semaphore(concurrency)
         self._session = None
         self.progress = ScanProgress()
@@ -667,7 +667,7 @@ def main():
     import sys
 
     parser = argparse.ArgumentParser(
-        description="CloudScan — Multi-Provider Bucket Discovery Scanner",
+        description="BucketAudit — Multi-Provider Bucket Discovery Scanner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -689,6 +689,14 @@ Examples:
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
+
+    # Load .env from repo root so DATABASE_URL is picked up
+    try:
+        from dotenv import load_dotenv
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        load_dotenv(os.path.join(repo_root, ".env"))
+    except ImportError:
+        pass
 
     if not args.keywords and not args.companies:
         parser.error("At least --keywords or --companies required")
@@ -761,7 +769,7 @@ Examples:
                     logger.error(f"DB persist error for {result.name}: {e}")
 
     # Run scan
-    print(f"\n☁  CloudScan — Discovery Scan")
+    print(f"\n☁  BucketAudit — Discovery Scan")
     print(f"   Keywords:  {', '.join(args.keywords) if args.keywords else '—'}")
     print(f"   Companies: {', '.join(args.companies) if args.companies else '—'}")
     print(f"   Providers: {', '.join(p.value for p in target_providers)}")

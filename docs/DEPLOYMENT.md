@@ -1,17 +1,24 @@
-# CloudScan — Deployment Guide
+# BucketAudit — Deployment Guide
 
 ## Overview
 
-CloudScan consists of several components:
+BucketAudit consists of several components:
 - **API Server**: Flask REST API (80+ endpoints) serving the backend logic
 - **Frontend**: React SPA served via Nginx or Vite dev server
 - **Database**: PostgreSQL (production) or SQLite (development)
 - **Monitor Worker**: Background scheduler for watchlist scans and alert generation
 - **AI Provider**: Optional connection to Anthropic, OpenAI, Google Gemini, or Ollama
 
+## Managed Hosting (Railway)
+
+For a first private beta without managing a server, use the service-by-service
+[Railway deployment guide](RAILWAY.md). It deploys PostgreSQL, the API, the
+dedicated scheduler worker, and the frontend separately and keeps internal
+services off the public internet.
+
 ## Database (PostgreSQL)
 
-CloudScan uses **PostgreSQL** by default for both local and production. SQLite is only used when `DATABASE_URL` is set to a `sqlite:///` URL (e.g. in tests).
+BucketAudit uses **PostgreSQL** by default for both local and production. SQLite is only used when `DATABASE_URL` is set to a `sqlite:///` URL (e.g. in tests).
 
 - **Local**: You can keep `RUN_DB_MIGRATIONS_ON_STARTUP=true` for convenience.
 - **Production**: Set `RUN_DB_MIGRATIONS_ON_STARTUP=false` and run migrations as an explicit deploy step (`alembic upgrade head`).
@@ -21,12 +28,12 @@ CloudScan uses **PostgreSQL** by default for both local and production. SQLite i
 ## Environment URLs (Local vs Production)
 
 - **Local**: No `VITE_API_URL` needed. The frontend uses relative `/api/v1`; Vite’s dev server proxies to `http://localhost:8000`. Backend `CORS_ORIGINS` can stay as `http://localhost:5173,http://localhost:3000`.
-- **Production (same host)**: If the UI and API are served from the same domain (e.g. nginx serves both), leave `VITE_API_URL` unset so the app keeps using relative `/api/v1`. Set `CORS_ORIGINS` to your frontend origin(s), e.g. `https://app.yourdomain.com`.
-- **Production (API on another host)**: Build the frontend with `VITE_API_URL=https://api.yourdomain.com` so all requests and SSE go to the API host. Set `CORS_ORIGINS` on the backend to include your frontend origin, e.g. `https://app.yourdomain.com`.
+- **Production (same host)**: If the UI and API are served from the same domain, leave `VITE_API_URL` unset so the app keeps using relative `/api/v1`. Set `CORS_ORIGINS=https://bucketaudit.com`.
+- **Production (separate API host)**: Build the frontend with `VITE_API_URL=https://api.bucketaudit.com` so all requests and SSE go to the API host. Set `CORS_ORIGINS=https://app.bucketaudit.com` on the backend.
 
 ## Docker Compose (Recommended)
 
-The fastest way to deploy CloudScan in production.
+The fastest way to deploy BucketAudit in production.
 
 ### Prerequisites
 - Docker Engine 20+
@@ -37,7 +44,7 @@ The fastest way to deploy CloudScan in production.
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/YOUR_USERNAME/cloudscan.git
+git clone https://github.com/bucketaudit-maker/cloudscan.git
 cd cloudscan
 cp .env.example .env
 
@@ -68,10 +75,10 @@ For HTTPS, add an nginx reverse proxy in front:
 ```nginx
 server {
     listen 443 ssl;
-    server_name cloudscan.yourdomain.com;
+    server_name app.bucketaudit.com;
 
-    ssl_certificate /etc/letsencrypt/live/cloudscan.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/cloudscan.yourdomain.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/app.bucketaudit.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app.bucketaudit.com/privkey.pem;
 
     location / {
         proxy_pass http://localhost:80;
@@ -135,7 +142,7 @@ Create `/etc/systemd/system/cloudscan-api.service`:
 
 ```ini
 [Unit]
-Description=CloudScan API Server
+Description=BucketAudit API Server
 After=network.target
 
 [Service]
@@ -161,7 +168,7 @@ Create `/etc/systemd/system/cloudscan-monitor.service`:
 
 ```ini
 [Unit]
-Description=CloudScan Monitor Scheduler
+Description=BucketAudit Monitor Scheduler
 After=network.target
 
 [Service]
@@ -286,7 +293,7 @@ docker compose logs -f backend
 
 ### CSRF Protection
 
-CloudScan enforces CSRF tokens on all POST/PUT/DELETE requests. Clients must:
+BucketAudit enforces CSRF tokens on all POST/PUT/DELETE requests. Clients must:
 1. Fetch a token from `GET /api/v1/csrf-token`
 2. Include it as `X-CSRF-Token` header on state-changing requests
 
@@ -310,7 +317,7 @@ The API server sets the following security headers on all responses:
 
 ## AI Provider Configuration
 
-CloudScan supports multiple AI providers for file classification, risk scoring, natural language search, and report generation.
+BucketAudit supports multiple AI providers for file classification, risk scoring, natural language search, and report generation.
 
 | Provider | Environment Variable | Models |
 |----------|---------------------|--------|

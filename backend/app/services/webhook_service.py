@@ -47,10 +47,10 @@ def _send_webhook(webhook: dict, payload: dict):
         "alert": payload,
     }).encode("utf-8")
 
-    headers = {"Content-Type": "application/json", "X-CloudScan-Event": "alert"}
+    headers = {"Content-Type": "application/json", "X-BucketAudit-Event": "alert"}
     if webhook.get("secret"):
         sig = hmac.new(webhook["secret"].encode("utf-8"), body, hashlib.sha256).hexdigest()
-        headers["X-CloudScan-Signature"] = sig
+        headers["X-BucketAudit-Signature"] = sig
 
     try:
         validated_url = validate_url(webhook["url"])
@@ -83,15 +83,15 @@ def send_test(webhook: dict) -> dict:
             "id": 0,
             "alert_type": "test",
             "severity": "info",
-            "title": "CloudScan Webhook Test",
-            "description": "This is a test alert from CloudScan.",
+            "title": "BucketAudit Webhook Test",
+            "description": "This is a test alert from BucketAudit.",
         },
     }).encode("utf-8")
 
-    headers = {"Content-Type": "application/json", "X-CloudScan-Event": "test"}
+    headers = {"Content-Type": "application/json", "X-BucketAudit-Event": "test"}
     if webhook.get("secret"):
         sig = hmac.new(webhook["secret"].encode("utf-8"), body, hashlib.sha256).hexdigest()
-        headers["X-CloudScan-Signature"] = sig
+        headers["X-BucketAudit-Signature"] = sig
 
     try:
         validated_url = validate_url(webhook["url"])

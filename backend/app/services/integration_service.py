@@ -34,7 +34,7 @@ def send_slack_alert(config: dict, alert: dict) -> dict:
         return {"success": False, "error": "No webhook_url configured"}
 
     severity = alert.get("severity", "medium")
-    title = alert.get("title", "CloudScan Alert")
+    title = alert.get("title", "BucketAudit Alert")
     description = alert.get("description", "")
     emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}.get(severity, "⚪")
 
@@ -43,7 +43,7 @@ def send_slack_alert(config: dict, alert: dict) -> dict:
         "blocks": [
             {
                 "type": "header",
-                "text": {"type": "plain_text", "text": f"{emoji} CloudScan Alert", "emoji": True}
+                "text": {"type": "plain_text", "text": f"{emoji} BucketAudit Alert", "emoji": True}
             },
             {
                 "type": "section",
@@ -59,7 +59,7 @@ def send_slack_alert(config: dict, alert: dict) -> dict:
             {
                 "type": "context",
                 "elements": [
-                    {"type": "mrkdwn", "text": f"Sent by CloudScan at {datetime.utcnow().isoformat()}Z"}
+                    {"type": "mrkdwn", "text": f"Sent by BucketAudit at {datetime.utcnow().isoformat()}Z"}
                 ]
             },
         ],
@@ -117,13 +117,13 @@ def create_jira_issue(config: dict, alert: dict) -> dict:
     issue_data = {
         "fields": {
             "project": {"key": project_key},
-            "summary": alert.get("title", "CloudScan Security Alert")[:255],
+            "summary": alert.get("title", "BucketAudit Security Alert")[:255],
             "description": {
                 "type": "doc", "version": 1,
                 "content": [
                     {
                         "type": "paragraph",
-                        "content": [{"type": "text", "text": alert.get("description", "Security issue detected by CloudScan")}]
+                        "content": [{"type": "text", "text": alert.get("description", "Security issue detected by BucketAudit")}]
                     },
                     {
                         "type": "paragraph",
@@ -140,14 +140,14 @@ def create_jira_issue(config: dict, alert: dict) -> dict:
                     {
                         "type": "paragraph",
                         "content": [
-                            {"type": "text", "text": f"Created by CloudScan at {datetime.utcnow().isoformat()}Z"},
+                            {"type": "text", "text": f"Created by BucketAudit at {datetime.utcnow().isoformat()}Z"},
                         ]
                     },
                 ]
             },
             "issuetype": {"name": config.get("issue_type", "Bug")},
             "priority": {"name": priority},
-            "labels": ["cloudscan", f"severity-{severity}"],
+            "labels": ["bucketaudit", f"severity-{severity}"],
         }
     }
 
@@ -214,8 +214,8 @@ def test_integration(integration: dict) -> dict:
         "id": 0,
         "alert_type": "test",
         "severity": "info",
-        "title": "CloudScan Integration Test",
-        "description": "This is a test alert from CloudScan to verify your integration is working.",
+        "title": "BucketAudit Integration Test",
+        "description": "This is a test alert from BucketAudit to verify your integration is working.",
     }
 
     if int_type == "slack":

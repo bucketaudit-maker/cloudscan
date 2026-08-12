@@ -32,19 +32,19 @@ def seed():
                 INSERT INTO users (email, username, password_hash, api_key, tier, created_at, queries_reset_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (email) DO NOTHING
-            """, ("demo@cloudscan.io", "demo", hash_password("demo1234"),
-                  "cs_demo_key_for_testing_purposes_only", "premium",
+            """, ("demo@bucketaudit.com", "demo", hash_password("demo1234"),
+                  "ba_demo_key_for_testing_purposes_only", "premium",
                   datetime.utcnow().isoformat(),
                   (datetime.utcnow() + timedelta(days=1)).isoformat()))
         else:
             db.execute("""
                 INSERT OR IGNORE INTO users (email, username, password_hash, api_key, tier, created_at, queries_reset_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, ("demo@cloudscan.io", "demo", hash_password("demo1234"),
-                  "cs_demo_key_for_testing_purposes_only", "premium",
+            """, ("demo@bucketaudit.com", "demo", hash_password("demo1234"),
+                  "ba_demo_key_for_testing_purposes_only", "premium",
                   datetime.utcnow().isoformat(),
                   (datetime.utcnow() + timedelta(days=1)).isoformat()))
-    print("  Created demo user: demo@cloudscan.io / demo1234")
+    print("  Created demo user: demo@bucketaudit.com / demo1234")
 
     # Realistic buckets across providers
     # (provider_id, name, region, url, status, company_name)
@@ -175,7 +175,7 @@ def seed():
         print(f"  {bname}: {len(files)} files")
 
     print(f"\nSeeded {len(buckets_data)} buckets, {total_files} files")
-    print("Demo API key: cs_demo_key_for_testing_purposes_only")
+    print("Demo API key: ba_demo_key_for_testing_purposes_only")
 
 
 if __name__ == "__main__":

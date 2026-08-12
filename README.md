@@ -1,4 +1,4 @@
-# ☁ CloudScan — Cloud Storage Security Platform
+# ☁ BucketAudit — Cloud Storage Security Platform
 
 A production-grade, full-stack platform for discovering, searching, and continuously monitoring publicly accessible cloud storage buckets across all major providers. Includes AI-powered analysis, real-time scan streaming, compliance reporting, team collaboration, and automated remediation tracking.
 
@@ -187,7 +187,7 @@ A production-grade, full-stack platform for discovering, searching, and continuo
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/cloudscan.git
+git clone https://github.com/bucketaudit-maker/cloudscan.git
 cd cloudscan
 
 # 2. Set up environment
@@ -217,7 +217,7 @@ npm run dev
 ### Option 2: Docker Compose
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cloudscan.git
+git clone https://github.com/bucketaudit-maker/cloudscan.git
 cd cloudscan
 cp .env.example .env
 
@@ -286,7 +286,7 @@ curl -N http://localhost:8000/api/v1/events/scans
 
 ## API Reference
 
-CloudScan exposes **80+ REST API endpoints**. See [`API.md`](./API.md) for the full reference with request/response examples.
+BucketAudit exposes **80+ REST API endpoints**. See [`API.md`](./API.md) for the full reference with request/response examples.
 
 ### Core Endpoints
 

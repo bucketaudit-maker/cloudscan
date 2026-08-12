@@ -1,20 +1,27 @@
 """
-Dedicated monitoring scheduler worker process.
+Dedicated scheduler worker process for watchlists and recurring discovery scans.
 
 Run:
-    python -m backend.app.workers.monitor_scheduler
+    backend/venv/bin/python3 -m backend.app.workers.monitor_scheduler
 """
 import logging
-import os
+import signal
 import sys
-import time
+import threading
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Ensure project root is on path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+repo_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repo_root))
+load_dotenv(repo_root / ".env")
 
 from backend.app.config import settings
-from backend.app.models.database import init_db
+from backend.app.models.database import get_db
 from backend.app.services.monitor_service import MonitoringService
+from backend.app.services.scan_scheduler import ScanScheduler
+from backend.app.services.scan_service import ScanService
 
 
 def main() -> None:
@@ -25,24 +32,54 @@ def main() -> None:
     )
     logger = logging.getLogger(__name__)
 
-    if settings.RUN_DB_MIGRATIONS_ON_STARTUP:
-        init_db()
-    else:
-        logger.info("Skipping DB migration on monitor worker startup (RUN_DB_MIGRATIONS_ON_STARTUP=false)")
+    # Migrations are an explicit deployment step; workers only verify connectivity.
+    with get_db() as db:
+        db.execute("SELECT 1")
+    logger.info("Database connection verified")
 
     monitor = MonitoringService()
-    interval = settings.MONITOR_SCHEDULER_INTERVAL_SECONDS
-    monitor.start_scheduler(check_interval_seconds=interval)
-    logger.info("Monitor scheduler worker started (interval=%ss)", interval)
+    scan_scheduler = ScanScheduler(ScanService())
+
+    if settings.ENABLE_MONITOR_SCHEDULER:
+        monitor.start_scheduler(
+            check_interval_seconds=settings.MONITOR_SCHEDULER_INTERVAL_SECONDS
+        )
+        logger.info(
+            "Monitor scheduler started (interval=%ss)",
+            settings.MONITOR_SCHEDULER_INTERVAL_SECONDS,
+        )
+
+    if settings.ENABLE_SCAN_SCHEDULER:
+        scan_scheduler.start(
+            check_interval_seconds=settings.SCAN_SCHEDULER_INTERVAL_SECONDS
+        )
+        logger.info(
+            "Recurring scan scheduler started (interval=%ss)",
+            settings.SCAN_SCHEDULER_INTERVAL_SECONDS,
+        )
+
+    if not settings.ENABLE_MONITOR_SCHEDULER and not settings.ENABLE_SCAN_SCHEDULER:
+        raise RuntimeError(
+            "Scheduler worker has no enabled schedulers. Set ENABLE_MONITOR_SCHEDULER "
+            "or ENABLE_SCAN_SCHEDULER to true."
+        )
+
+    stop_event = threading.Event()
+
+    def _stop(signum, _frame):
+        logger.info("Received signal %s; stopping scheduler worker", signum)
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
 
     try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        logger.info("Stopping monitor scheduler worker...")
+        stop_event.wait()
+    finally:
+        logger.info("Stopping scheduler worker...")
         monitor.stop_scheduler()
+        scan_scheduler.stop()
 
 
 if __name__ == "__main__":
     main()
-

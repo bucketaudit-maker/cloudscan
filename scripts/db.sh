@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-# CloudScan — Database Management
+# BucketAudit — Database Management
 #
 # Usage:
 #   ./scripts/db.sh init          Initialize fresh database
@@ -67,7 +67,7 @@ from backend.app.models.database import init_db, FileStore
 init_db()
 s = FileStore.get_stats()
 print(f'''
-CloudScan Database Statistics
+BucketAudit Database Statistics
 {'═' * 40}
   Files:        {s['total_files']:>10,}
   Buckets:      {s['total_buckets']:>10,}
@@ -99,7 +99,7 @@ for e in s['top_extensions'][:10]:
         ;;
 
     help|*)
-        echo "CloudScan Database Management"
+        echo "BucketAudit Database Management"
         echo ""
         echo "Usage: $0 <command>"
         echo ""

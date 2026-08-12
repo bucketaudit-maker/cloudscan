@@ -1,6 +1,6 @@
-# CloudScan REST API Reference
+# BucketAudit REST API Reference
 
-CloudScan exposes a JSON REST API for cloud storage security scanning, file search, monitoring, and AI-powered analysis.
+BucketAudit exposes a JSON REST API for cloud storage security scanning, file search, monitoring, and AI-powered analysis.
 
 **Base URL:** `/api/v1`
 
@@ -36,15 +36,15 @@ Three authentication methods are supported:
 | Method | Header / Param | Example |
 |--------|---------------|---------|
 | **Bearer Token** (JWT) | `Authorization: Bearer <token>` | Obtained from `/auth/register` or `/auth/login` |
-| **API Key Header** | `X-API-Key: cs_<hex>` | Assigned on registration |
-| **API Key Query Param** | `?access_token=cs_<hex>` | For SSE or browser-based access |
+| **API Key Header** | `X-API-Key: ba_<hex>` | Assigned on registration |
+| **API Key Query Param** | `?access_token=ba_<hex>` | For SSE or browser-based access |
 
 ```bash
 # Bearer token
 curl -H "Authorization: Bearer eyJhbGci..." https://your-host/api/v1/files?q=backup
 
 # API key
-curl -H "X-API-Key: cs_a1b2c3d4..." https://your-host/api/v1/files?q=backup
+curl -H "X-API-Key: ba_a1b2c3d4..." https://your-host/api/v1/files?q=backup
 ```
 
 ### Auth Levels
@@ -137,7 +137,7 @@ curl -X POST https://your-host/api/v1/auth/register \
 ```json
 {
   "token": "eyJhbGci...",
-  "api_key": "cs_a1b2c3d4e5f6...",
+  "api_key": "ba_a1b2c3d4e5f6...",
   "user": {
     "id": 1,
     "email": "user@example.com",
@@ -180,7 +180,7 @@ curl -X POST https://your-host/api/v1/auth/login \
     "email": "user@example.com",
     "username": "scanner",
     "tier": "free",
-    "api_key": "cs_a1b2c3d4e5f6..."
+    "api_key": "ba_a1b2c3d4e5f6..."
   }
 }
 ```
@@ -209,7 +209,7 @@ curl -H "Authorization: Bearer eyJhbGci..." https://your-host/api/v1/auth/me
   "email": "user@example.com",
   "username": "scanner",
   "tier": "free",
-  "api_key": "cs_a1b2c3d4e5f6...",
+  "api_key": "ba_a1b2c3d4e5f6...",
   "created_at": "2025-01-15T10:30:00",
   "last_login": "2025-03-10T14:22:00",
   "queries_today": 42
@@ -299,10 +299,10 @@ Full-text and regex file search with filtering and pagination.
 
 ```bash
 # Full-text search
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/files?q=database+backup&ext=sql,bak&sort=newest"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/files?q=database+backup&ext=sql,bak&sort=newest"
 
 # Regex search
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/files?regex=.*credentials.*\.json"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/files?regex=.*credentials.*\.json"
 ```
 
 **Response `200`:**
@@ -359,14 +359,14 @@ Export search results as CSV or JSON file download.
 | `provider` | string | — | Provider filter |
 
 ```bash
-curl -H "X-API-Key: cs_..." -o export.csv \
+curl -H "X-API-Key: ba_..." -o export.csv \
   "https://your-host/api/v1/files/export?q=backup&format=csv"
 ```
 
 **Response:** File download with `Content-Disposition: attachment` header.
 
 - **CSV columns:** filepath, filename, extension, size_bytes, url, bucket_name, provider_name, ai_classification, last_modified
-- **Filename:** `cloudscan-export-<timestamp>.csv` or `.json`
+- **Filename:** `bucketaudit-export-<timestamp>.csv` or `.json`
 
 ---
 
@@ -385,7 +385,7 @@ Get a random sample of indexed files.
 | `count` | integer | `20` | Number of files (max `100`) |
 
 ```bash
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/files/random?count=10"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/files/random?count=10"
 ```
 
 **Response `200`:**
@@ -413,7 +413,7 @@ Preview the first 4 KB of a file's content. Text files return escaped content; b
 **Text-previewable extensions:** `env`, `txt`, `log`, `csv`, `json`, `xml`, `yaml`, `yml`, `md`, `ini`, `cfg`, `conf`, `sh`, `py`, `js`, `ts`, `css`, `html`, `sql`, `toml`, `key`, `pem`, `htaccess`, `gitignore`, `dockerfile`, `tf`, `tfvars`, `properties`, `htpasswd`
 
 ```bash
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/files/1234/preview"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/files/1234/preview"
 ```
 
 **Response `200` (text file):**
@@ -562,7 +562,7 @@ GET /buckets
 | `per_page` | integer | `50` | Results per page (max `200`) |
 
 ```bash
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/buckets?provider=aws&status=open&page=1"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/buckets?provider=aws&status=open&page=1"
 ```
 
 **Response `200`:**
@@ -610,7 +610,7 @@ Returns bucket metadata with paginated file listing.
 | `per_page` | integer | `100` | Files per page (max `500`) |
 
 ```bash
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/buckets/42?page=1&per_page=50"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/buckets/42?page=1&per_page=50"
 ```
 
 **Response `200`:**
@@ -692,7 +692,7 @@ Time-series data showing files and buckets discovered per day.
 | `days` | integer | `30` | Lookback period (max `365`) |
 
 ```bash
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/stats/timeline?days=30"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/stats/timeline?days=30"
 ```
 
 **Response `200`:**
@@ -724,7 +724,7 @@ Categorical distributions for risk, provider, classification, status, and extens
 **Auth:** `auth_required`
 
 ```bash
-curl -H "X-API-Key: cs_..." "https://your-host/api/v1/stats/breakdown"
+curl -H "X-API-Key: ba_..." "https://your-host/api/v1/stats/breakdown"
 ```
 
 **Response `200`:**
@@ -1381,15 +1381,15 @@ Sends a test payload to the webhook URL.
 
 ### Webhook Payload Format
 
-When an alert matches a webhook's `event_types`, CloudScan sends a POST request:
+When an alert matches a webhook's `event_types`, BucketAudit sends a POST request:
 
 **Headers:**
 
 | Header | Value |
 |--------|-------|
 | `Content-Type` | `application/json` |
-| `X-CloudScan-Event` | `alert` or `test` |
-| `X-CloudScan-Signature` | HMAC-SHA256 hex digest (only if `secret` is set) |
+| `X-BucketAudit-Event` | `alert` or `test` |
+| `X-BucketAudit-Signature` | HMAC-SHA256 hex digest (only if `secret` is set) |
 
 **Body:**
 
@@ -1414,7 +1414,7 @@ When an alert matches a webhook's `event_types`, CloudScan sends a POST request:
 ```python
 import hmac, hashlib
 
-signature = request.headers["X-CloudScan-Signature"]
+signature = request.headers["X-BucketAudit-Signature"]
 expected = hmac.new(secret.encode(), request.data, hashlib.sha256).hexdigest()
 assert hmac.compare_digest(signature, expected)
 ```
@@ -1615,7 +1615,7 @@ Generate a comprehensive AI security report.
 
 ```json
 {
-  "title": "CloudScan Security Assessment",
+  "title": "BucketAudit Security Assessment",
   "summary": "Analysis of 3400 buckets across 5 providers...",
   "key_findings": ["45 critical-risk buckets with exposed credentials", "..."],
   "risk_distribution": { "critical": 45, "high": 120, "medium": 340, "low": 890 },

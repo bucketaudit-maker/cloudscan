@@ -69,7 +69,7 @@ def decode_token(token: str) -> dict | None:
 
 
 def generate_api_key() -> str:
-    return f"cs_{secrets.token_hex(24)}"
+    return f"ba_{secrets.token_hex(24)}"
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -88,7 +88,7 @@ def _send_slack_message(config: dict, title: str, body: str, severity: str, link
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"{emoji} CloudScan Alert", "emoji": True}
+            "text": {"type": "plain_text", "text": f"{emoji} BucketAudit Alert", "emoji": True}
         },
         {
             "type": "section",
