@@ -21,11 +21,20 @@ Do not generate a public domain for PostgreSQL or `worker`.
 
 ## 2. Configure Service Sources
 
+The repository root is directly deployable as the API. This supports Railway's
+default GitHub service setup without requiring a root-directory override:
+
+| Service | Root directory | Config file |
+| --- | --- | --- |
+| `api` | `/` | `/railway.json` |
+
+For separate worker and frontend services, use the service-specific settings
+below.
+
 Use these settings for each service:
 
 | Service | Root directory | Config file |
 | --- | --- | --- |
-| `api` | `/backend` | `/backend/railway.api.json` |
 | `worker` | `/backend` | `/backend/railway.worker.json` |
 | `frontend` | `/frontend` | `/frontend/railway.json` |
 
