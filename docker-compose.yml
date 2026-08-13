@@ -81,7 +81,9 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: proxy
     container_name: cloudscan-ui
     ports:
       - "80:80"
