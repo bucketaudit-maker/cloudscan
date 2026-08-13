@@ -37,6 +37,7 @@ Use these settings for each service:
 | --- | --- | --- |
 | `worker` | `/backend` | `/backend/railway.worker.json` |
 | `frontend` | `/frontend` | `/frontend/railway.json` |
+| `scannerJob` | `/` | `/backend/railway.scanner.json` |
 
 Set the config-file path under each service's Config as Code setting. The API
 config runs `alembic upgrade head` before deploying and blocks the release if a
@@ -96,6 +97,17 @@ VITE_API_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}
 
 `VITE_API_URL` is compiled into the browser bundle. Redeploy `frontend` after
 changing the API domain.
+
+For a run-to-completion scanner service, set this single-line start command on
+`scannerJob`:
+
+```bash
+python -m backend.app.scanners.engine -p aws azure gcp digitalocean alibaba -k assets uploads backup public static data config logs -c bucketaudit cloudscan -n 500 -r 3 --concurrency 15 --timeout 15
+```
+
+Reference the same `DATABASE_URL` used by the API. Do not configure public
+networking or a health-check path for this service. The scanner config disables
+restarts because a successful scan exits normally.
 
 ## 4. Deploy In Order
 
