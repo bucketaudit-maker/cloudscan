@@ -188,6 +188,23 @@ def generate_bucket_names(
     """
     names: dict[str, str] = {}
 
+    # Prioritize customer-supplied companies so targeted candidates are not
+    # truncated behind the much larger generic candidate set.
+    if companies:
+        for company in companies:
+            c = re.sub(r"[^a-z0-9]", "-", company.lower().strip()).strip("-")
+            if not c:
+                continue
+            original = company.strip()
+            names[c] = original
+            for suffix in SUFFIXES:
+                for sep in SEPARATORS[:3]:
+                    names[f"{c}{sep}{suffix}"] = original
+            for env in ["dev", "staging", "prod", "test"]:
+                names[f"{c}-{env}"] = original
+                for svc in ["api", "web", "app", "data", "ml"]:
+                    names[f"{c}-{svc}-{env}"] = original
+
     # Strategy 1: Common word combinations
     for word in COMMON_WORDS[:25]:
         for suffix in SUFFIXES[:18]:
@@ -208,30 +225,13 @@ def generate_bucket_names(
                     names.setdefault(f"{kw}{sep}{word}", "")
                     names.setdefault(f"{word}{sep}{kw}", "")
 
-    # Strategy 3: Company name variants
-    if companies:
-        for company in companies:
-            c = re.sub(r"[^a-z0-9]", "-", company.lower().strip()).strip("-")
-            if not c:
-                continue
-            original = company.strip()
-            names[c] = original
-            for suffix in SUFFIXES:
-                for sep in SEPARATORS[:3]:
-                    names[f"{c}{sep}{suffix}"] = original
-            # Common patterns: company-env, company-service-env
-            for env in ["dev", "staging", "prod", "test"]:
-                names[f"{c}-{env}"] = original
-                for svc in ["api", "web", "app", "data", "ml"]:
-                    names[f"{c}-{svc}-{env}"] = original
-
-    # Strategy 4: Random alphanumeric
+    # Strategy 3: Random alphanumeric
     for _ in range(min(200, max_names // 20)):
         length = random.randint(6, 14)
         rname = "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
         names.setdefault(rname, "")
 
-    # Strategy 5: Broader synthetic patterns to better fill max_names, even without companies
+    # Strategy 4: Broader synthetic patterns to better fill max_names, even without companies
     seeds = []
     if keywords:
         seeds.extend([k.lower().strip() for k in keywords if k and k.strip()])
@@ -762,6 +762,7 @@ Examples:
                         provider_id=provider_id, name=result.name,
                         region=result.region, url=result.url,
                         status=result.status, scan_time_ms=result.scan_time_ms,
+                        company_name=result.company_name or None,
                     )
                     if result.status == "open" and result.files:
                         FStore.insert_batch(bucket["id"], result.files)
