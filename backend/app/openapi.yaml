@@ -632,6 +632,12 @@ paths:
         - name: status
           in: query
           schema: { type: string, enum: [open, closed, partial] }
+        - name: ownership_status
+          in: query
+          schema: { type: string, enum: [unverified, pending, verified, rejected] }
+        - name: exposure_type
+          in: query
+          schema: { type: string, enum: [unknown, public_listing, public_website, access_denied, existence_only] }
         - name: search
           in: query
           description: Search bucket names
@@ -978,8 +984,10 @@ paths:
       tags: [Scans]
       summary: Real-time scan events (SSE)
       operationId: scanEvents
+      security: [BearerAuth: [], ApiKeyAuth: []]
       description: |
-        Server-Sent Events stream. Events: `connected`, `progress`, `bucket_found`,
+        User-scoped Server-Sent Events stream. Browser EventSource clients may pass
+        the bearer token as the `access_token` query parameter. Events: `connected`, `progress`, `bucket_found`,
         `scan_started`, `scan_complete`, `scan_cancelled`, `drift_detected`, `error`.
       responses:
         '200':
@@ -987,6 +995,8 @@ paths:
           content:
             text/event-stream:
               schema: { type: string }
+        '401':
+          description: Authentication required
 
   # ═══════════════════════════════════════════
   # MONITORING
@@ -1963,6 +1973,13 @@ components:
         total_size_bytes: { type: integer }
         risk_score: { type: integer, minimum: 0, maximum: 100 }
         risk_level: { type: string, enum: [critical, high, medium, low, info] }
+        company_name: { type: string, nullable: true }
+        attribution_source: { type: string, nullable: true }
+        attribution_confidence: { type: number, minimum: 0, maximum: 1, nullable: true }
+        ownership_status: { type: string, enum: [unverified, pending, verified, rejected] }
+        exposure_type: { type: string, enum: [unknown, public_listing, public_website, access_denied, existence_only] }
+        exposure_evidence: { type: object, additionalProperties: true, nullable: true }
+        last_evidence_at: { type: string, format: date-time, nullable: true }
         first_seen: { type: string, format: date-time }
         last_scanned: { type: string, format: date-time }
 

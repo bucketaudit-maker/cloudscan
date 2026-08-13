@@ -30,11 +30,12 @@ class ScanService:
         self._event_cb = event_callback
         self._active_threads: dict[int, threading.Thread] = {}
         self._cancelled_jobs: set[int] = set()
+        self._job_owners: dict[int, int] = {}
 
     def _emit(self, event_type: str, data: dict):
         if self._event_cb:
             try:
-                self._event_cb(event_type, data)
+                self._event_cb(event_type, data, self._job_owners.get(data.get("job_id")))
             except Exception as e:
                 logger.error(f"Event callback error: {e}")
 
@@ -57,6 +58,8 @@ class ScanService:
         }
         job = ScanJobStore.create("discovery", config, created_by)
         job_id = job["id"]
+        if created_by is not None:
+            self._job_owners[job_id] = created_by
         logger.info(f"Scan job {job_id} created: keywords={keywords}, providers={[p.value for p in target_providers]}")
 
         def _thread_target():
@@ -86,6 +89,7 @@ class ScanService:
             finally:
                 self._active_threads.pop(job_id, None)
                 self._cancelled_jobs.discard(job_id)
+                self._job_owners.pop(job_id, None)
                 logger.info(f"[Thread {job_id}] Thread exiting")
 
         t = threading.Thread(target=_thread_target, daemon=True, name=f"scan-{job_id}")
@@ -135,7 +139,12 @@ class ScanService:
                     provider_id=provider_id, name=result.name,
                     region=result.region, url=result.url,
                     status=result.status, scan_time_ms=result.scan_time_ms,
-                    company_name=result.company_name or None)
+                    company_name=result.company_name or None,
+                    attribution_source=result.attribution_source or None,
+                    attribution_confidence=result.attribution_confidence,
+                    ownership_status=result.ownership_status,
+                    exposure_type=result.exposure_type,
+                    evidence=result.evidence or None)
                 if result.status == "open" and result.files:
                     count = FileStore.insert_batch(bucket["id"], result.files)
                     logger.info(f"[OPEN] {result.provider}://{result.name} — {count} files")
@@ -176,6 +185,11 @@ class ScanService:
                         "file_count": result.file_count,
                         "scan_time_ms": result.scan_time_ms,
                         "company_name": result.company_name or None,
+                        "attribution_source": result.attribution_source or None,
+                        "attribution_confidence": result.attribution_confidence,
+                        "ownership_status": result.ownership_status,
+                        "exposure_type": result.exposure_type,
+                        "evidence": result.evidence,
                     }})
             except Exception as e:
                 logger.error(f"Error persisting {result.name}: {e}")

@@ -62,7 +62,7 @@ Rate limit resets daily at midnight UTC. When exceeded, responses return `429 To
 | `GET` | `/health` | Health check |
 | `GET` | `/stats` | Aggregate statistics |
 | `GET` | `/providers` | Cloud provider list |
-| `GET` | `/events/scans` | SSE real-time stream |
+| `GET` | `/events/scans` | Authenticated, user-scoped SSE real-time stream |
 | `GET` | `/ai/status` | AI provider status |
 | `GET` | `/csrf-token` | Get CSRF token |
 | `GET` | `/pricing` | View pricing tiers |
@@ -112,7 +112,7 @@ Rate limit resets daily at midnight UTC. When exceeded, responses return `429 To
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/buckets` | List discovered buckets |
+| `GET` | `/buckets` | List buckets; filter by provider, status, ownership status, or exposure type |
 | `GET` | `/buckets/:id` | Bucket detail + file listing |
 | `GET` | `/buckets/:id/tags` | Get bucket tags |
 | `POST` | `/buckets/:id/tags` | Add/manage bucket tags |

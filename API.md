@@ -557,6 +557,8 @@ GET /buckets
 |-------|------|---------|-------------|
 | `provider` | string | — | Filter by provider name |
 | `status` | string | — | Filter: `open`, `closed`, `partial`, `error`, `unknown` |
+| `ownership_status` | string | — | Filter: `unverified`, `pending`, `verified`, `rejected` |
+| `exposure_type` | string | — | Filter by observed access evidence |
 | `search` | string | — | Substring search on bucket name |
 | `page` | integer | `1` | Page number |
 | `per_page` | integer | `50` | Results per page (max `200`) |
@@ -582,6 +584,17 @@ curl -H "X-API-Key: ba_..." "https://your-host/api/v1/buckets?provider=aws&statu
       "last_scanned": "2025-03-10T12:00:00",
       "risk_score": 85,
       "risk_level": "critical",
+      "company_name": "Example Company",
+      "attribution_source": "scan_input_name_pattern",
+      "attribution_confidence": 0.35,
+      "ownership_status": "unverified",
+      "exposure_type": "public_listing",
+      "exposure_evidence": {
+        "method": "unauthenticated_http",
+        "response_status": 200,
+        "signal": "unauthenticated_bucket_listing",
+        "confidence": 0.95
+      },
       "provider_name": "aws",
       "provider_display": "Amazon S3"
     }
@@ -798,7 +811,7 @@ POST /scans
 
 Launch a cloud storage discovery scan. Progress is streamed via [SSE](#real-time-events-sse).
 
-**Auth:** `auth_required`
+**Auth:** `auth_required_strict`; the job is owned by the authenticated user.
 
 **Request Body:**
 
@@ -848,7 +861,7 @@ curl -X POST -H "Authorization: Bearer ..." \
 GET /scans
 ```
 
-**Auth:** `auth_required`
+**Auth:** `auth_required_strict`; returns only the current user's jobs.
 
 **Response `200`:**
 
@@ -879,7 +892,7 @@ GET /scans
 GET /scans/:id
 ```
 
-**Auth:** `auth_required`
+**Auth:** `auth_required_strict`; only the creator can view the job.
 
 **Response `200`:** Full scan job object (see [Scan Job](#scan-job) in Data Objects).
 
@@ -893,7 +906,7 @@ GET /scans/:id
 POST /scans/:id/cancel
 ```
 
-**Auth:** `auth_required`
+**Auth:** `auth_required_strict`; only the creator can cancel the job.
 
 ```bash
 curl -X POST -H "Authorization: Bearer ..." https://your-host/api/v1/scans/7/cancel
@@ -917,9 +930,9 @@ curl -X POST -H "Authorization: Bearer ..." https://your-host/api/v1/scans/7/can
 GET /scans/debug
 ```
 
-Debug endpoint showing active scan threads and recent jobs.
+Debug endpoint showing the current user's active scan threads and recent jobs.
 
-**Auth:** None (public)
+**Auth:** `auth_required_strict`
 
 **Response `200`:**
 
@@ -947,10 +960,10 @@ Debug endpoint showing active scan threads and recent jobs.
 GET /events/scans
 ```
 
-Server-Sent Events stream for real-time scan progress. No authentication required.
+User-scoped Server-Sent Events stream for real-time scan progress. Authentication is required.
 
 ```bash
-curl -N "https://your-host/api/v1/events/scans"
+curl -N -H "Authorization: Bearer ..." "https://your-host/api/v1/events/scans"
 ```
 
 ### Event Types
@@ -1714,6 +1727,12 @@ Use AI to score and prioritize unread alerts.
 | `last_scanned` | string | Last scan timestamp |
 | `risk_score` | integer | Risk score (0-100) |
 | `risk_level` | string | `critical`, `high`, `medium`, `low` |
+| `company_name` | string | Inferred or verified company association |
+| `attribution_source` | string | How the association was derived |
+| `attribution_confidence` | number | Attribution confidence from 0 to 1 |
+| `ownership_status` | string | Whether ownership has been independently verified |
+| `exposure_type` | string | The access behavior observed by the scanner |
+| `exposure_evidence` | object | Non-sensitive HTTP evidence supporting the classification |
 | `provider_name` | string | Provider identifier |
 | `provider_display` | string | Provider display name |
 

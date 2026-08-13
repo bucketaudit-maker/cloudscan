@@ -148,6 +148,11 @@ class BucketResult:
     error: str = ""
     scan_time_ms: int = 0
     company_name: str = ""
+    attribution_source: str = ""
+    attribution_confidence: Optional[float] = None
+    ownership_status: str = "unverified"
+    exposure_type: str = "unknown"
+    evidence: dict = field(default_factory=dict)
 
     def to_dict(self):
         return asdict(self)
@@ -273,6 +278,19 @@ def generate_bucket_names(
     return result
 
 
+def attribution_for_candidate(bucket_name: str, company_name: str) -> tuple[str, Optional[float]]:
+    """Describe a name-based company inference without claiming ownership."""
+    if not company_name:
+        return "", None
+
+    company_slug = re.sub(r"[^a-z0-9]", "-", company_name.lower().strip()).strip("-")
+    if bucket_name == company_slug:
+        return "scan_input_exact_name", 0.5
+    if bucket_name.startswith(f"{company_slug}-") or bucket_name.startswith(f"{company_slug}."):
+        return "scan_input_name_pattern", 0.35
+    return "scan_input_name_pattern", 0.2
+
+
 # ═══════════════════════════════════════════════════════════════════
 # SCANNER CORE
 # ═══════════════════════════════════════════════════════════════════
@@ -367,13 +385,13 @@ class BucketScanner:
                 candidate_urls = self._build_probe_urls(provider, name, region)
                 any_not_found = False
                 last_error = ""
+                closed_evidence = None
 
                 for probe_url in candidate_urls:
                     try:
                         async with session.get(
                             probe_url,
                             allow_redirects=(provider != Provider.AWS),
-                            ssl=False,
                         ) as resp:
                             body = await resp.text(errors="replace")
                             result.scan_time_ms = int((time.monotonic() - start) * 1000)
@@ -400,19 +418,38 @@ class BucketScanner:
 
                             if resp.status == 200 and cfg["list_marker"] in body:
                                 result.status = "open"
+                                result.exposure_type = "public_listing"
+                                result.evidence = self._build_evidence(
+                                    probe_url, resp.status, "unauthenticated_bucket_listing",
+                                    aws_region_hint,
+                                )
                                 result.files = self._parse_listing(body, probe_url, name)
                                 result.file_count = len(result.files)
                                 return result
                             if resp.status == 200:
                                 # Website endpoint returned content (bucket is public)
                                 result.status = "open"
+                                result.exposure_type = "public_website"
+                                result.evidence = self._build_evidence(
+                                    probe_url, resp.status, "unauthenticated_website_read",
+                                    aws_region_hint,
+                                )
                                 return result
                             if resp.status == 403 or cfg["denied_marker"] in body:
+                                closed_evidence = (
+                                    "access_denied",
+                                    self._build_evidence(
+                                        probe_url, resp.status, "access_denied", aws_region_hint,
+                                    ),
+                                )
+                                # AWS can deny bucket listing while still serving a public website.
+                                if provider == Provider.AWS:
+                                    continue
                                 result.status = "closed"
+                                result.exposure_type, result.evidence = closed_evidence
                                 return result
                             if is_aws_redirect:
                                 # Bucket exists but in a different AWS region.
-                                result.status = "closed"
                                 if aws_region_hint:
                                     result.region = aws_region_hint
                                 else:
@@ -422,11 +459,24 @@ class BucketScanner:
                                     if m:
                                         result.region = m.group(1)
                                 result.url = self._build_url(provider, name, result.region or region)
-                                return result
+                                closed_evidence = (
+                                    "existence_only",
+                                    self._build_evidence(
+                                        probe_url, resp.status, "provider_region_redirect",
+                                        result.region,
+                                    ),
+                                )
+                                continue
                             if "NoSuchWebsiteConfiguration" in body:
                                 # Bucket exists but has no website config — still a discovery.
-                                result.status = "closed"
-                                return result
+                                closed_evidence = (
+                                    "existence_only",
+                                    self._build_evidence(
+                                        probe_url, resp.status, "no_website_configuration",
+                                        aws_region_hint,
+                                    ),
+                                )
+                                continue
                             if resp.status == 404 or cfg["missing_marker"] in body:
                                 any_not_found = True
                                 continue
@@ -436,7 +486,10 @@ class BucketScanner:
                     except aiohttp.ClientError as e:
                         last_error = str(e)[:200]
 
-                if last_error and not any_not_found:
+                if closed_evidence:
+                    result.status = "closed"
+                    result.exposure_type, result.evidence = closed_evidence
+                elif last_error and not any_not_found:
                     result.status = "error"
                     result.error = last_error
                 else:
@@ -453,6 +506,27 @@ class BucketScanner:
             result.error = f"unexpected: {str(e)[:150]}"
 
         return result
+
+    @staticmethod
+    def _build_evidence(endpoint: str, response_status: int, signal: str,
+                        provider_region: str = "") -> dict:
+        """Return non-sensitive, reproducible evidence for an exposure decision."""
+        evidence = {
+            "method": "unauthenticated_http",
+            "endpoint": endpoint,
+            "response_status": response_status,
+            "signal": signal,
+            "confidence": {
+                "unauthenticated_bucket_listing": 0.95,
+                "unauthenticated_website_read": 0.8,
+                "access_denied": 0.8,
+                "provider_region_redirect": 0.75,
+                "no_website_configuration": 0.75,
+            }.get(signal, 0.5),
+        }
+        if provider_region:
+            evidence["provider_region"] = provider_region
+        return evidence
 
     def _parse_listing(self, xml_text: str, base_url: str, bucket_name: str) -> list[dict]:
         """Parse S3/GCS/Alibaba XML listing into file entries."""
@@ -554,6 +628,9 @@ class BucketScanner:
                 result = await coro
                 # Attach company name from the generation map
                 result.company_name = name_company_map.get(result.name, "")
+                result.attribution_source, result.attribution_confidence = attribution_for_candidate(
+                    result.name, result.company_name,
+                )
                 self.progress.names_checked += 1
                 self.progress.elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -614,7 +691,7 @@ async def enumerate_bucket_deep(
                 params["marker"] = marker
 
             try:
-                async with session.get(base_url, params=params, ssl=False) as resp:
+                async with session.get(base_url, params=params) as resp:
                     if resp.status != 200:
                         break
                     text = await resp.text(errors="replace")
@@ -763,6 +840,11 @@ Examples:
                         region=result.region, url=result.url,
                         status=result.status, scan_time_ms=result.scan_time_ms,
                         company_name=result.company_name or None,
+                        attribution_source=result.attribution_source or None,
+                        attribution_confidence=result.attribution_confidence,
+                        ownership_status=result.ownership_status,
+                        exposure_type=result.exposure_type,
+                        evidence=result.evidence or None,
                     )
                     if result.status == "open" and result.files:
                         FStore.insert_batch(bucket["id"], result.files)

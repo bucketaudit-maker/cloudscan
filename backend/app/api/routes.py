@@ -7,7 +7,7 @@ import queue
 import secrets
 import time
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from pathlib import Path
 
@@ -33,6 +33,17 @@ from backend.app.services.monitor_service import MonitoringService
 
 logger = logging.getLogger(__name__)
 
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _as_utc(value) -> datetime:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
 api = Blueprint("api", __name__, url_prefix="/api/v1")
 
 
@@ -42,12 +53,15 @@ def _sanitize_query_params(qs: str) -> str:
     return re.sub(r"(access_token|api_key|token|secret)=[^&]*", r"\1=REDACTED", qs, flags=re.IGNORECASE)
 
 # Global event queues for SSE subscribers
-_sse_subscribers: list[queue.Queue] = []
+_sse_subscribers: list[tuple[int, queue.Queue]] = []
 _sse_lock = threading.Lock()
 
 
-def broadcast_event(event_type: str, data: dict):
-    """Push event to all SSE subscribers."""
+def broadcast_event(event_type: str, data: dict, user_id: int = None):
+    """Push an event only to subscribers belonging to the same user."""
+    if user_id is None:
+        logger.debug("SSE broadcast [%s] skipped because no owner was supplied", event_type)
+        return
     msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
     with _sse_lock:
         sub_count = len(_sse_subscribers)
@@ -55,14 +69,20 @@ def broadcast_event(event_type: str, data: dict):
             logger.debug(f"SSE broadcast [{event_type}] — no subscribers connected")
             return
         dead = []
-        for q in _sse_subscribers:
+        delivered = 0
+        for subscriber_user_id, q in _sse_subscribers:
+            if subscriber_user_id != user_id:
+                continue
             try:
                 q.put_nowait(msg)
+                delivered += 1
             except queue.Full:
-                dead.append(q)
-        for q in dead:
-            _sse_subscribers.remove(q)
-        logger.debug(f"SSE broadcast [{event_type}] → {sub_count - len(dead)} subscribers")
+                dead.append((subscriber_user_id, q))
+        for subscriber in dead:
+            _sse_subscribers.remove(subscriber)
+        logger.debug(
+            "SSE broadcast [%s] -> %s/%s subscribers", event_type, delivered, sub_count,
+        )
 
 
 # Scan service singleton with event broadcasting
@@ -161,7 +181,7 @@ def health():
 
     return jsonify({
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": _utc_now().isoformat(),
         "version": "1.0.0",
     })
 
@@ -235,12 +255,12 @@ def register():
             return jsonify({"error": "Email or username already taken"}), 409
 
         api_key = generate_api_key()
-        now = datetime.utcnow().isoformat()
+        now = _utc_now().isoformat()
         db.execute("""
             INSERT INTO users (email, username, password_hash, api_key, created_at, queries_reset_at)
             VALUES (%s, %s, %s, %s, %s, %s)
         """, (email, username, hash_password(password), api_key, now,
-              (datetime.utcnow() + timedelta(days=1)).isoformat()))
+              (_utc_now() + timedelta(days=1)).isoformat()))
         user = db.execute("SELECT * FROM users WHERE email=%s", (email,)).fetchone()
 
     token = create_token(user["id"], user["email"], user["tier"])
@@ -271,7 +291,7 @@ def login():
             return jsonify({"error": "Invalid credentials"}), 401
         if not user["is_active"]:
             return jsonify({"error": "Account disabled"}), 403
-        db.execute("UPDATE users SET last_login=%s WHERE id=%s", (datetime.utcnow().isoformat(), user["id"]))
+        db.execute("UPDATE users SET last_login=%s WHERE id=%s", (_utc_now().isoformat(), user["id"]))
 
     # Check if 2FA is enabled
     if user.get("totp_enabled"):
@@ -326,7 +346,7 @@ def forgot_password():
         # Generate reset token (valid for 1 hour)
         import secrets
         token = secrets.token_urlsafe(32)
-        expires = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        expires = (_utc_now() + timedelta(hours=1)).isoformat()
 
         # Invalidate any previous tokens for this user
         db.execute("UPDATE password_reset_tokens SET used=1 WHERE user_id=%s AND used=0", (user["id"],))
@@ -367,7 +387,7 @@ def reset_password():
         if not row:
             return jsonify({"error": "Invalid or expired reset token"}), 400
 
-        if datetime.fromisoformat(row["expires_at"]) < datetime.utcnow():
+        if _as_utc(row["expires_at"]) < _utc_now():
             db.execute("UPDATE password_reset_tokens SET used=1 WHERE id=%s", (row["id"],))
             return jsonify({"error": "Reset token has expired. Please request a new one."}), 400
 
@@ -520,7 +540,7 @@ def get_tier_limits():
             # Count today's scans
             today_scans = db.execute(
                 "SELECT COUNT(*) as cnt FROM scan_jobs WHERE created_by=%s AND created_at >= %s",
-                (g.user_id, datetime.utcnow().strftime("%Y-%m-%d")),
+                (g.user_id, _utc_now().strftime("%Y-%m-%d")),
             ).fetchone()
             usage["scans_today"] = today_scans["cnt"] if today_scans else 0
             # Count schedules
@@ -633,7 +653,7 @@ def export_files():
         regex=regex or None, page=1, per_page=10000,
     )
     items = results.get("items", [])
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = _utc_now().strftime("%Y%m%d-%H%M%S")
 
     if fmt == "json":
         return Response(
@@ -815,6 +835,8 @@ def list_buckets():
         per_page=min(request.args.get("per_page", 50, type=int), 200),
         tag_id=tag_id,
         tag_user_id=g.get("user_id") if tag_id else None,
+        ownership_status=request.args.get("ownership_status"),
+        exposure_type=request.args.get("exposure_type"),
     ))
 
 
@@ -864,7 +886,7 @@ def list_providers():
 # ═══════════════════════════════════════════════════════════════════
 
 @api.route("/scans", methods=["POST"])
-@auth_required
+@auth_required_strict
 def create_scan():
     data = request.get_json(silent=True) or {}
     keywords = data.get("keywords", [])
@@ -887,7 +909,7 @@ def create_scan():
         with get_db() as db:
             today_scans = db.execute(
                 "SELECT COUNT(*) as cnt FROM scan_jobs WHERE created_by=%s AND created_at >= %s",
-                (g.user_id, datetime.utcnow().strftime("%Y-%m-%d")),
+                (g.user_id, _utc_now().strftime("%Y-%m-%d")),
             ).fetchone()
             if today_scans and today_scans["cnt"] >= limits["scans_day"]:
                 return jsonify({"error": f"Daily scan limit ({limits['scans_day']}) reached for {tier} plan. Upgrade for more scans.", "tier": tier}), 429
@@ -914,21 +936,23 @@ def create_scan():
 
 
 @api.route("/scans/<int:job_id>")
-@auth_required
+@auth_required_strict
 def get_scan(job_id):
-    job = ScanJobStore.get(job_id)
+    job = ScanJobStore.get(job_id, created_by=g.user_id)
     if not job:
         return jsonify({"error": "Scan job not found"}), 404
     return jsonify(job)
 
 
 @api.route("/scans/debug")
+@auth_required_strict
 def scan_debug():
     """Debug endpoint — shows active scan threads and recent job statuses."""
     active = scan_service.get_active_scans() if hasattr(scan_service, 'get_active_scans') else []
-    recent = ScanJobStore.list_recent(5)
+    active = [job_id for job_id in active if ScanJobStore.get(job_id, created_by=g.user_id)]
+    recent = ScanJobStore.list_recent(5, created_by=g.user_id)
     with _sse_lock:
-        sub_count = len(_sse_subscribers)
+        sub_count = sum(1 for user_id, _q in _sse_subscribers if user_id == g.user_id)
     return jsonify({
         "active_thread_ids": active,
         "sse_subscribers": sub_count,
@@ -945,14 +969,16 @@ def scan_debug():
 
 
 @api.route("/scans")
-@auth_required
+@auth_required_strict
 def list_scans():
-    return jsonify({"items": ScanJobStore.list_recent(50)})
+    return jsonify({"items": ScanJobStore.list_recent(50, created_by=g.user_id)})
 
 
 @api.route("/scans/<int:job_id>/cancel", methods=["POST"])
-@auth_required
+@auth_required_strict
 def cancel_scan(job_id):
+    if not ScanJobStore.get(job_id, created_by=g.user_id):
+        return jsonify({"error": "Scan job not found"}), 404
     result = scan_service.cancel_scan(job_id)
     if result:
         return jsonify({"message": "Scan cancelled"})
@@ -964,12 +990,14 @@ def cancel_scan(job_id):
 # ═══════════════════════════════════════════════════════════════════
 
 @api.route("/events/scans")
+@auth_required_strict
 def scan_events():
     """SSE endpoint for real-time scan progress and bucket discovery events."""
     q = queue.Queue(maxsize=1000)
 
     with _sse_lock:
-        _sse_subscribers.append(q)
+        subscriber = (g.user_id, q)
+        _sse_subscribers.append(subscriber)
         logger.info(f"SSE client connected — {len(_sse_subscribers)} total subscribers")
 
     def generate():
@@ -986,8 +1014,8 @@ def scan_events():
             pass
         finally:
             with _sse_lock:
-                if q in _sse_subscribers:
-                    _sse_subscribers.remove(q)
+                if subscriber in _sse_subscribers:
+                    _sse_subscribers.remove(subscriber)
                 logger.info(f"SSE client disconnected — {len(_sse_subscribers)} remaining")
 
     return Response(
@@ -997,8 +1025,6 @@ def scan_events():
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "*",
         },
     )
 
@@ -1667,7 +1693,7 @@ def generate_report():
             "total_buckets": bucket_count, "open_buckets": open_count,
             "total_files": file_count, "total_alerts": alert_count,
         },
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": _utc_now().isoformat(),
         "report_type": report_type,
     }
 
@@ -1681,7 +1707,7 @@ def generate_report():
                     "SELECT COUNT(*) FROM buckets WHERE risk_level=%s", (level,)
                 ).fetchone()[0]
 
-    title = f"{report_type.title()} Report — {datetime.utcnow().strftime('%Y-%m-%d')}"
+    title = f"{report_type.title()} Report — {_utc_now().strftime('%Y-%m-%d')}"
     report = ReportStore.create(g.user_id, title, report_type, json.dumps(content), fmt)
     return jsonify(report), 201
 

@@ -63,10 +63,10 @@ class MonitoringService:
         self._running = False
         self._thread = None
 
-    def _emit(self, event_type: str, data: dict):
+    def _emit(self, event_type: str, data: dict, user_id: int = None):
         if self._event_cb:
             try:
-                self._event_cb(event_type, data)
+                self._event_cb(event_type, data, user_id)
             except Exception:
                 pass
 
@@ -109,6 +109,12 @@ class MonitoringService:
                     provider_id=provider_id, name=result.name,
                     region=result.region, url=result.url,
                     status=result.status, scan_time_ms=result.scan_time_ms,
+                    company_name=result.company_name or None,
+                    attribution_source=result.attribution_source or None,
+                    attribution_confidence=result.attribution_confidence,
+                    ownership_status=result.ownership_status,
+                    exposure_type=result.exposure_type,
+                    evidence=result.evidence or None,
                 )
                 bucket_id = bucket["id"]
 
@@ -193,7 +199,7 @@ class MonitoringService:
             self._emit("monitor_progress", {
                 "watchlist_id": wl_id,
                 "progress": progress.to_dict(),
-            })
+            }, user_id)
 
         try:
             await scanner.run_discovery(
@@ -233,7 +239,7 @@ class MonitoringService:
         self._emit("monitor_complete", {
             "watchlist_id": wl_id,
             "summary": results_summary,
-        })
+        }, user_id)
 
         logger.info(f"[Monitor] Watchlist '{watchlist['name']}' complete: "
                      f"{results_summary['new_open']} open, "

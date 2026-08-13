@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS buckets (
     risk_score      INTEGER DEFAULT NULL,
     risk_level      TEXT DEFAULT NULL,
     company_name    TEXT DEFAULT NULL,
+    attribution_source TEXT DEFAULT NULL,
+    attribution_confidence REAL DEFAULT NULL,
+    ownership_status TEXT NOT NULL DEFAULT 'unverified'
+        CHECK(ownership_status IN ('unverified','pending','verified','rejected')),
+    exposure_type   TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(exposure_type IN ('unknown','public_listing','public_website','access_denied','existence_only')),
+    exposure_evidence TEXT DEFAULT NULL,
+    last_evidence_at TEXT DEFAULT NULL,
     UNIQUE(provider_id, name, region)
 );
 
@@ -128,7 +136,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     last_login      TEXT,
     queries_today   INTEGER DEFAULT 0,
-    queries_reset_at TEXT
+    queries_reset_at TEXT,
+    totp_secret     TEXT DEFAULT NULL,
+    totp_enabled    BOOLEAN DEFAULT 0,
+    totp_backup_codes TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS api_log (
@@ -256,6 +267,8 @@ CREATE INDEX IF NOT EXISTS idx_api_log_created ON api_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_files_ai_classification ON files(ai_classification);
 CREATE INDEX IF NOT EXISTS idx_buckets_risk_score ON buckets(risk_score);
 CREATE INDEX IF NOT EXISTS idx_buckets_risk_level ON buckets(risk_level);
+CREATE INDEX IF NOT EXISTS idx_buckets_ownership_status ON buckets(ownership_status);
+CREATE INDEX IF NOT EXISTS idx_buckets_exposure_type ON buckets(exposure_type);
 CREATE INDEX IF NOT EXISTS idx_alerts_ai_priority ON alerts(ai_priority_score);
 
 -- ═══ Sprint 4: Team, Notifications, Reports, Integrations, Compliance, Remediation ═══
@@ -711,37 +724,94 @@ def init_db() -> str:
 
 class BucketStore:
     @staticmethod
+    def _to_dict(row) -> dict:
+        result = dict(row) if row else {}
+        for field_name in ("metadata", "exposure_evidence"):
+            value = result.get(field_name)
+            if isinstance(value, str):
+                try:
+                    result[field_name] = json.loads(value)
+                except (TypeError, ValueError):
+                    pass
+        return result
+
+    @staticmethod
     def upsert(provider_id: int, name: str, region: str, url: str,
                status: str = "open", scan_time_ms: int = 0, metadata: dict = None,
-               company_name: str = None) -> dict:
+               company_name: str = None, attribution_source: str = None,
+               attribution_confidence: float = None,
+               ownership_status: str = "unverified",
+               exposure_type: str = "unknown", evidence: dict = None) -> dict:
         with get_db() as db:
             now = datetime.now(timezone.utc).isoformat()
             sql = """
-                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata, company_name)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata, company_name, attribution_source, attribution_confidence, ownership_status, exposure_type, exposure_evidence, last_evidence_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(provider_id, name, region) DO UPDATE SET
                     status=excluded.status, last_scanned=excluded.last_scanned,
                     scan_time_ms=excluded.scan_time_ms,
                     url=COALESCE(excluded.url, buckets.url),
                     metadata=COALESCE(excluded.metadata, buckets.metadata),
-                    company_name=COALESCE(excluded.company_name, buckets.company_name)
+                    company_name=CASE
+                        WHEN buckets.ownership_status='verified' THEN buckets.company_name
+                        WHEN COALESCE(excluded.attribution_confidence, -1) >= COALESCE(buckets.attribution_confidence, -1)
+                            THEN COALESCE(excluded.company_name, buckets.company_name)
+                        ELSE buckets.company_name END,
+                    attribution_source=CASE
+                        WHEN buckets.ownership_status='verified' THEN buckets.attribution_source
+                        WHEN COALESCE(excluded.attribution_confidence, -1) >= COALESCE(buckets.attribution_confidence, -1)
+                            THEN COALESCE(excluded.attribution_source, buckets.attribution_source)
+                        ELSE buckets.attribution_source END,
+                    attribution_confidence=CASE
+                        WHEN buckets.ownership_status='verified' THEN buckets.attribution_confidence
+                        WHEN excluded.attribution_confidence IS NULL THEN buckets.attribution_confidence
+                        WHEN buckets.attribution_confidence IS NULL
+                            OR excluded.attribution_confidence >= buckets.attribution_confidence
+                            THEN excluded.attribution_confidence
+                        ELSE buckets.attribution_confidence END,
+                    exposure_type=excluded.exposure_type,
+                    exposure_evidence=COALESCE(excluded.exposure_evidence, buckets.exposure_evidence),
+                    last_evidence_at=excluded.last_evidence_at
             """ if settings.is_postgres else """
-                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata, company_name)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO buckets (provider_id, name, region, url, status, first_seen, last_scanned, scan_time_ms, metadata, company_name, attribution_source, attribution_confidence, ownership_status, exposure_type, exposure_evidence, last_evidence_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(provider_id, name, region) DO UPDATE SET
                     status=excluded.status, last_scanned=excluded.last_scanned,
                     scan_time_ms=excluded.scan_time_ms,
-                    url=COALESCE(excluded.url, url),
-                    metadata=COALESCE(excluded.metadata, metadata),
-                    company_name=COALESCE(excluded.company_name, company_name)
+                    url=COALESCE(excluded.url, buckets.url),
+                    metadata=COALESCE(excluded.metadata, buckets.metadata),
+                    company_name=CASE
+                        WHEN buckets.ownership_status='verified' THEN buckets.company_name
+                        WHEN COALESCE(excluded.attribution_confidence, -1) >= COALESCE(buckets.attribution_confidence, -1)
+                            THEN COALESCE(excluded.company_name, buckets.company_name)
+                        ELSE buckets.company_name END,
+                    attribution_source=CASE
+                        WHEN buckets.ownership_status='verified' THEN buckets.attribution_source
+                        WHEN COALESCE(excluded.attribution_confidence, -1) >= COALESCE(buckets.attribution_confidence, -1)
+                            THEN COALESCE(excluded.attribution_source, buckets.attribution_source)
+                        ELSE buckets.attribution_source END,
+                    attribution_confidence=CASE
+                        WHEN buckets.ownership_status='verified' THEN buckets.attribution_confidence
+                        WHEN excluded.attribution_confidence IS NULL THEN buckets.attribution_confidence
+                        WHEN buckets.attribution_confidence IS NULL
+                            OR excluded.attribution_confidence >= buckets.attribution_confidence
+                            THEN excluded.attribution_confidence
+                        ELSE buckets.attribution_confidence END,
+                    exposure_type=excluded.exposure_type,
+                    exposure_evidence=COALESCE(excluded.exposure_evidence, buckets.exposure_evidence),
+                    last_evidence_at=excluded.last_evidence_at
             """
+            evidence_at = now if exposure_type != "unknown" else None
             db.execute(sql, (provider_id, name, region, url, status, now, now, scan_time_ms,
-                             json.dumps(metadata) if metadata else None, company_name))
+                             json.dumps(metadata) if metadata else None, company_name,
+                             attribution_source, attribution_confidence, ownership_status,
+                             exposure_type, json.dumps(evidence) if evidence else None,
+                             evidence_at))
             row = db.execute(
                 "SELECT * FROM buckets WHERE provider_id=%s AND name=%s AND region=%s",
                 (provider_id, name, region),
             ).fetchone()
-            return dict(row) if row else {}
+            return BucketStore._to_dict(row)
 
     @staticmethod
     def get(bucket_id: int) -> Optional[dict]:
@@ -750,11 +820,13 @@ class BucketStore:
                 SELECT b.*, p.name as provider_name, p.display_name as provider_display
                 FROM buckets b JOIN providers p ON b.provider_id=p.id WHERE b.id=%s
             """, (bucket_id,)).fetchone()
-            return dict(row) if row else None
+            return BucketStore._to_dict(row) if row else None
 
     @staticmethod
     def list_all(provider: str = None, status: str = None, search: str = None,
-                 page: int = 1, per_page: int = 50, tag_id: int = None, tag_user_id: int = None) -> dict:
+                 page: int = 1, per_page: int = 50, tag_id: int = None,
+                 tag_user_id: int = None, ownership_status: str = None,
+                 exposure_type: str = None) -> dict:
         with get_db() as db:
             q = """SELECT b.*, p.name as provider_name, p.display_name as provider_display
                    FROM buckets b JOIN providers p ON b.provider_id=p.id"""
@@ -769,6 +841,10 @@ class BucketStore:
                 q += " AND p.name=%s"; params.append(provider)
             if status:
                 q += " AND b.status=%s"; params.append(status)
+            if ownership_status:
+                q += " AND b.ownership_status=%s"; params.append(ownership_status)
+            if exposure_type:
+                q += " AND b.exposure_type=%s"; params.append(exposure_type)
             if search:
                 q += " AND b.name LIKE %s"; params.append(f"%{search}%")
 
@@ -776,7 +852,7 @@ class BucketStore:
             q += " ORDER BY b.last_scanned DESC NULLS LAST LIMIT %s OFFSET %s"
             params.extend([per_page, (page - 1) * per_page])
             rows = db.execute(q, tuple(params)).fetchall()
-            return {"items": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
+            return {"items": [BucketStore._to_dict(r) for r in rows], "total": total, "page": page, "per_page": per_page}
 
     @staticmethod
     def update_risk(bucket_id: int, risk_score: int, risk_level: str):
@@ -1059,9 +1135,15 @@ class ScanJobStore:
             return dict(row)
 
     @staticmethod
-    def get(job_id: int) -> Optional[dict]:
+    def get(job_id: int, created_by: int = None) -> Optional[dict]:
         with get_db() as db:
-            row = db.execute("SELECT * FROM scan_jobs WHERE id=%s", (job_id,)).fetchone()
+            if created_by is None:
+                row = db.execute("SELECT * FROM scan_jobs WHERE id=%s", (job_id,)).fetchone()
+            else:
+                row = db.execute(
+                    "SELECT * FROM scan_jobs WHERE id=%s AND created_by=%s",
+                    (job_id, created_by),
+                ).fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -1073,9 +1155,17 @@ class ScanJobStore:
             db.execute(f"UPDATE scan_jobs SET {sets} WHERE id=%s", tuple(vals))
 
     @staticmethod
-    def list_recent(limit: int = 50) -> list[dict]:
+    def list_recent(limit: int = 50, created_by: int = None) -> list[dict]:
         with get_db() as db:
-            rows = db.execute("SELECT * FROM scan_jobs ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
+            if created_by is None:
+                rows = db.execute(
+                    "SELECT * FROM scan_jobs ORDER BY id DESC LIMIT %s", (limit,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM scan_jobs WHERE created_by=%s ORDER BY id DESC LIMIT %s",
+                    (created_by, limit),
+                ).fetchall()
             return [dict(r) for r in rows]
 
 

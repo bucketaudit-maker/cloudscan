@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import uuid
 
 import pytest
 
@@ -24,6 +25,7 @@ from backend.app.models.database import (
     ScanJobStore,
     WatchlistStore,
     AlertStore,
+    CsrfTokenStore,
 )
 from backend.app.utils.auth import hash_password, verify_password, create_token, decode_token
 
@@ -41,15 +43,20 @@ def client(app):
 
 
 def _auth_headers(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": CsrfTokenStore.generate(),
+    }
 
 
 @pytest.fixture
 def auth_user(client):
     """Register and return (token, user_id) for first user."""
+    suffix = uuid.uuid4().hex[:10]
     r = client.post(
         "/api/v1/auth/register",
-        json={"email": "user_a@test.com", "username": "usera", "password": "password123"},
+        json={"email": f"user_a_{suffix}@test.com", "username": f"usera{suffix}", "password": "password123"},
     )
     assert r.status_code == 201
     data = r.get_json()
@@ -59,9 +66,10 @@ def auth_user(client):
 @pytest.fixture
 def auth_user_b(client):
     """Register and return (token, user_id) for second user (for authz tests)."""
+    suffix = uuid.uuid4().hex[:10]
     r = client.post(
         "/api/v1/auth/register",
-        json={"email": "user_b@test.com", "username": "userb", "password": "password456"},
+        json={"email": f"user_b_{suffix}@test.com", "username": f"userb{suffix}", "password": "password456"},
     )
     assert r.status_code == 201
     data = r.get_json()
@@ -85,12 +93,31 @@ class TestDatabase:
 
     def test_bucket_upsert(self):
         init_db()
-        b = BucketStore.upsert(1, "test-bucket", "us-east-1", "https://test.s3.amazonaws.com", "open")
+        b = BucketStore.upsert(
+            1, "test-bucket", "us-east-1", "https://test.s3.amazonaws.com", "open",
+            company_name="Acme", attribution_source="scan_input_exact_name",
+            attribution_confidence=0.5, exposure_type="public_listing",
+            evidence={"signal": "unauthenticated_bucket_listing", "response_status": 200},
+        )
         assert b["name"] == "test-bucket"
         assert b["status"] == "open"
+        assert b["ownership_status"] == "unverified"
+        assert b["exposure_type"] == "public_listing"
+        assert b["exposure_evidence"]["response_status"] == 200
         # Upsert again should update
-        b2 = BucketStore.upsert(1, "test-bucket", "us-east-1", "https://test.s3.amazonaws.com", "closed")
+        b2 = BucketStore.upsert(
+            1, "test-bucket", "us-east-1", "https://test.s3.amazonaws.com", "closed",
+            company_name="Weak Guess", attribution_source="scan_input_name_pattern",
+            attribution_confidence=0.2, exposure_type="access_denied",
+        )
         assert b2["status"] == "closed"
+        assert b2["company_name"] == "Acme"
+        assert b2["attribution_confidence"] == 0.5
+        assert b2["exposure_type"] == "access_denied"
+        filtered = BucketStore.list_all(
+            ownership_status="unverified", exposure_type="access_denied",
+        )
+        assert any(item["id"] == b2["id"] for item in filtered["items"])
 
     def test_file_insert_and_search(self):
         init_db()
@@ -207,7 +234,11 @@ class TestAPI:
         assert "items" in data
 
     def test_scan_requires_auth(self, client):
-        r = client.post("/api/v1/scans", json={"keywords": ["test"]})
+        r = client.post(
+            "/api/v1/scans",
+            headers={"X-CSRF-Token": CsrfTokenStore.generate()},
+            json={"keywords": ["test"]},
+        )
         assert r.status_code == 401
 
 
@@ -227,6 +258,7 @@ class TestAuthzMonitorRequiresAuth:
     def test_create_watchlist_unauthorized(self, client):
         r = client.post(
             "/api/v1/monitor/watchlists",
+            headers={"X-CSRF-Token": CsrfTokenStore.generate()},
             json={"name": "Test", "keywords": ["kw"]},
         )
         assert r.status_code == 401
@@ -416,8 +448,20 @@ class TestCriticalPathWatchlist:
 
 
 class TestCriticalPathScans:
-    def test_create_scan_with_auth(self, client, auth_user):
-        token, _ = auth_user
+    def test_create_scan_with_auth(self, client, auth_user, monkeypatch):
+        token, user_id = auth_user
+
+        def fake_start_discovery(**kwargs):
+            return ScanJobStore.create(
+                "discovery",
+                {"keywords": kwargs.get("keywords") or []},
+                created_by=user_id,
+            )
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.scan_service.start_discovery",
+            fake_start_discovery,
+        )
         r = client.post(
             "/api/v1/scans",
             headers=_auth_headers(token),
@@ -430,6 +474,31 @@ class TestCriticalPathScans:
         r = client.get(f"/api/v1/scans/{job_id}", headers=_auth_headers(token))
         assert r.status_code == 200
         assert r.get_json()["status"] in ("pending", "running", "completed", "failed", "cancelled")
+
+    def test_scan_jobs_are_scoped_to_owner(self, client, auth_user, auth_user_b):
+        _token_a, user_id_a = auth_user
+        token_b, _user_id_b = auth_user_b
+        job = ScanJobStore.create("discovery", {"keywords": ["private"]}, user_id_a)
+
+        r = client.get(f"/api/v1/scans/{job['id']}", headers=_auth_headers(token_b))
+
+        assert r.status_code == 404
+
+    def test_scan_events_require_authentication(self, client):
+        r = client.get("/api/v1/events/scans")
+
+        assert r.status_code == 401
+
+    def test_scan_events_accept_jwt_query_for_eventsource(self, client, auth_user):
+        token, _user_id = auth_user
+
+        r = client.get(
+            f"/api/v1/events/scans?access_token={token}",
+            buffered=False,
+        )
+
+        assert r.status_code == 200
+        r.close()
 
 
 class TestCriticalPathAlerts:

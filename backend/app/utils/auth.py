@@ -42,12 +42,13 @@ def verify_password(password: str, stored_hash: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════
 
 def create_token(user_id: int, email: str, tier: str = "free") -> str:
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
         "email": email,
         "tier": tier,
-        "exp": (datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRATION_HOURS)).isoformat(),
-        "iat": datetime.utcnow().isoformat(),
+        "exp": (now + timedelta(hours=settings.JWT_EXPIRATION_HOURS)).isoformat(),
+        "iat": now.isoformat(),
     }
     data = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
     sig = hmac.new(settings.SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
@@ -61,7 +62,10 @@ def decode_token(token: str) -> dict | None:
         if not hmac.compare_digest(sig, expected):
             return None
         payload = json.loads(base64.urlsafe_b64decode(data + "=="))
-        if datetime.fromisoformat(payload["exp"]) < datetime.utcnow():
+        expires_at = datetime.fromisoformat(payload["exp"])
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < datetime.now(timezone.utc):
             return None
         return payload
     except Exception:
@@ -92,6 +96,16 @@ def auth_required(f):
                 g.user_tier = payload.get("tier", "free")
                 return f(*args, **kwargs)
             return jsonify({"error": "Invalid or expired token"}), 401
+
+        # EventSource cannot set Authorization headers, so accept a JWT in
+        # access_token before falling back to legacy API-key query auth.
+        query_token = request.args.get("access_token")
+        if query_token:
+            payload = decode_token(query_token)
+            if payload:
+                g.user_id = payload["sub"]
+                g.user_tier = payload.get("tier", "free")
+                return f(*args, **kwargs)
 
         # Try API key (header or query param)
         api_key = request.headers.get("X-API-Key") or request.args.get("access_token")
@@ -129,10 +143,21 @@ def auth_required_strict(f):
                 g.user_tier = payload.get("tier", "free")
                 return f(*args, **kwargs)
 
+        query_token = request.args.get("access_token")
+        if query_token:
+            payload = decode_token(query_token)
+            if payload:
+                g.user_id = payload["sub"]
+                g.user_tier = payload.get("tier", "free")
+                return f(*args, **kwargs)
+
         api_key = request.headers.get("X-API-Key") or request.args.get("access_token")
         if api_key:
             with get_db() as db:
-                user = db.execute("SELECT id, tier FROM users WHERE api_key=%s AND is_active=1", (api_key,)).fetchone()
+                user = db.execute(
+                    "SELECT id, tier FROM users WHERE api_key=%s AND is_active",
+                    (api_key,),
+                ).fetchone()
                 if user:
                     g.user_id = user["id"]
                     g.user_tier = user["tier"]
