@@ -183,13 +183,32 @@ export default function App() {
   const [modal, setModal] = useState<{title:string,msg:string,onConfirm:()=>void,input?:boolean}|null>(null)
   const [modalInput, setModalInput] = useState('')
   const [actionLoading, setActionLoading] = useState<string|null>(null)
+  const loadStats = useCallback(() => {
+    apiFetch('/stats', {cache:'no-store'}).then(d => {
+      if(d?.total_buckets !== undefined) setStats(d)
+    })
+  }, [])
 
   useEffect(()=>{ document.documentElement.setAttribute('data-theme',theme); try{localStorage.setItem('cs_theme',theme)}catch{} },[theme])
   useEffect(()=>{ try{localStorage.setItem('cs_onboarding',JSON.stringify(onboarding))}catch{} },[onboarding])
   useEffect(()=>{window.scrollTo(0,0)},[view])
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();setView('search');setTimeout(()=>ref.current?.focus(),100)};if(e.key==='Escape'){setShowNotifPanel(false);setModal(null);setBulkAlerts([]);setBulkRems([])}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[])
 
-  useEffect(() => { apiFetch('/stats').then(d => setStats(d)); apiFetch('/ai/status').then(d => { if(d){setAiAvail(d.available||false);setAiProvider(d.active_provider||'');setAiProviders(d.providers||[])} }); apiFetch('/stats/timeline?days=30').then(d=>d&&setDashTimeline(d)); apiFetch('/stats/breakdown').then(d=>d&&setDashBreakdown(d)) }, [])
+  useEffect(() => {
+    loadStats()
+    const interval = window.setInterval(loadStats, 60_000)
+    const refreshWhenVisible = () => {
+      if(document.visibilityState === 'visible') loadStats()
+    }
+    window.addEventListener('focus', loadStats)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', loadStats)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [loadStats])
+  useEffect(() => { apiFetch('/ai/status').then(d => { if(d){setAiAvail(d.available||false);setAiProvider(d.active_provider||'');setAiProviders(d.providers||[])} }); apiFetch('/stats/timeline?days=30').then(d=>d&&setDashTimeline(d)); apiFetch('/stats/breakdown').then(d=>d&&setDashBreakdown(d)) }, [])
   useEffect(() => { if(_token) { apiFetch('/auth/me').then(d => { if(d?.id) setUser(d); else { _token=null; try{localStorage.removeItem('cs_token')}catch{} } }); apiFetch('/searches/saved').then(d=>{if(d?.items)setSavedSearches(d.items)}); loadNotifCount(); loadOrgs() } const notifInterval = setInterval(() => { if(_token) loadNotifCount() }, 30000); return () => clearInterval(notifInterval) }, [])
 
   const connectSSE = useCallback(() => {
@@ -198,10 +217,10 @@ export default function App() {
     es.addEventListener('connected',() => setSseConnected(true))
     es.addEventListener('progress',(e:any) => setScanProgress(JSON.parse(e.data)))
     es.addEventListener('bucket_found',(e:any) => { const d=JSON.parse(e.data); setScanEvents(prev=>[...prev,d]) })
-    es.addEventListener('scan_complete',(e:any) => { const d=JSON.parse(e.data); setScanProgress((p:any)=>({...p,...d.stats,phase:'complete'})); apiFetch('/stats').then(d=>d&&setStats(d)) })
+    es.addEventListener('scan_complete',(e:any) => { const d=JSON.parse(e.data); setScanProgress((p:any)=>({...p,...d.stats,phase:'complete'})); loadStats() })
     es.addEventListener('scan_started',(e:any) => { setScanEvents([]); setScanProgress({phase:'scanning',...JSON.parse(e.data)}) })
     es.onerror = () => setSseConnected(false); sseCleanup.current = () => es.close(); return () => es.close()
-  },[])
+  },[loadStats])
   useEffect(() => { const c = connectSSE(); return c }, [connectSSE])
 
   const doLogin = async() => { setAuthError(''); setAuthSuccess(''); setAuthLoading(true); const r = await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({email:authForm.email,password:authForm.password})}); setAuthLoading(false); if(!r){setAuthError('Login failed');return}; if(r.requires_2fa){setTwoFaTempToken(r.temp_token);setAuthMode('login' as any);setAuthSuccess('Enter your 2FA code');setTwoFaCode('');return}; if(!r.token){setAuthError(r?.error||'Invalid credentials');return}; _token=r.token; _csrfToken=null; try{localStorage.setItem('cs_token',r.token)}catch{}; setUser(r.user); setView('home'); setAuthForm({email:'',username:'',password:''}) }
@@ -255,7 +274,7 @@ export default function App() {
     const r=await apiFetch('/scans',{method:'POST',body:JSON.stringify(d)}); setScanStatus(r)
     if(r?.id){const pollId=setInterval(async()=>{const job=await apiFetch(`/scans/${r.id}`);if(!job)return;if(job.progress){try{setScanProgress(typeof job.progress==='string'?JSON.parse(job.progress):job.progress)}catch{}}
       setScanProgress((prev:any)=>({...prev,names_checked:job.names_checked||prev?.names_checked||0,buckets_found:job.buckets_found||prev?.buckets_found||0,buckets_open:job.buckets_open||prev?.buckets_open||0,files_indexed:job.files_indexed||prev?.files_indexed||0,phase:job.status==='completed'?'complete':job.status==='failed'?'failed':job.status==='cancelled'?'cancelled':prev?.phase||'scanning'}))
-      if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);apiFetch('/stats').then(d=>d&&setStats(d));loadScanHistory();if(job.status==='completed')setOnboarding(o=>({...o,firstScan:true}));if(job.status==='cancelled')setScanProgress(null)}},2000)}
+      if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){clearInterval(pollId);loadStats();loadScanHistory();if(job.status==='completed')setOnboarding(o=>({...o,firstScan:true}));if(job.status==='cancelled')setScanProgress(null)}},2000)}
   }
 
   // ── Nav navigation helper ──
