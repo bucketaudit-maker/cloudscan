@@ -498,14 +498,22 @@ export default function App() {
       {/* ─── HOME ─── */}
       {view==='home' && <main className="home-shell">
         <div className="home-grid"/>
-        <section className="home-content fade-in">
-          <div className="home-eyebrow"><span/>CLOUD EXPOSURE SEARCH</div>
-          <h1>Find exposed cloud files.</h1>
-          <p className="home-subtitle">Search indexed public storage across AWS, Azure, GCP, DigitalOcean, and Alibaba Cloud.</p>
+        <section className="home-content home-hero fade-in">
+          <div className="home-eyebrow"><span/>EXTERNAL CLOUD STORAGE EXPOSURE MONITORING</div>
+          <h1>Know when public cloud storage exposes your data.</h1>
+          <p className="home-subtitle">BucketAudit helps security teams discover and monitor publicly reachable object storage across AWS, Azure, GCP, DigitalOcean, and Alibaba Cloud.</p>
 
+          <div className="home-hero-actions">
+            <button className="btn-primary" onClick={()=>{if(user){setScanForm({keywords:'',companies:'',providers:[]});setView('scan');loadScanHistory()}else{setAuthMode('register');setAuthError('');setAuthSuccess('');setView('auth')}}}>Check my organization</button>
+            <button onClick={()=>loadBk()}>Explore exposed storage <span>→</span></button>
+          </div>
+
+          <div className="home-trust-line"><span>Read-only checks</span><span>Public endpoints only</span><span>No cloud credentials required</span><span>Evidence recorded</span></div>
+
+          <div className="home-search-label">SEARCH THE PUBLIC EXPOSURE INDEX</div>
           <div className="home-search slide-up">
             <span aria-hidden="true">⌕</span>
-            <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search by filename, extension, or keyword"/>
+            <input value={heroQ} onChange={e=>setHeroQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(heroQ)} placeholder="Search exposed file metadata by filename, extension, or keyword"/>
             <button onClick={()=>doSearch(heroQ)} className="btn-primary">Search</button>
           </div>
 
@@ -524,6 +532,59 @@ export default function App() {
             <button onClick={()=>navGo('dashboard')}>View dashboard <span>→</span></button>
           </div>}
         </section>
+
+        <section className="home-section" aria-labelledby="home-how-title">
+          <div className="home-section-heading">
+            <div className="home-section-kicker">HOW IT WORKS</div>
+            <h2 id="home-how-title">From a company name to verified exposure evidence.</h2>
+            <p>BucketAudit narrows public cloud storage discovery to the organizations and assets that matter to you.</p>
+          </div>
+          <div className="home-steps">
+            {[
+              ['01','Define your scope','Enter company, brand, product, domain, or storage keywords and choose the cloud providers to check.'],
+              ['02','Discover public exposure','BucketAudit tests likely object-storage endpoints for unauthenticated public access using read-only requests.'],
+              ['03','Verify and monitor','Review exposed file metadata and access evidence, then schedule monitoring for status or file changes.'],
+            ].map(([number,title,description])=><article className="home-step" key={number}>
+              <span>{number}</span><h3>{title}</h3><p>{description}</p>
+            </article>)}
+          </div>
+        </section>
+
+        <section className="home-section home-scope" aria-labelledby="home-detect-title">
+          <div>
+            <div className="home-section-heading home-section-heading-left">
+              <div className="home-section-kicker">WHAT BUCKETAUDIT FINDS</div>
+              <h2 id="home-detect-title">The external storage risks hidden outside your inventory.</h2>
+            </div>
+            <div className="home-detection-grid">
+              {[
+                ['Public buckets','Object storage endpoints that permit unauthenticated listing or public website access.'],
+                ['Sensitive filenames','Backups, credentials, configuration, databases, source code, and operational logs.'],
+                ['Exposure changes','New buckets, changed access status, and files added or removed between scans.'],
+                ['Organization risk','Potential exposures associated with company, brand, product, or domain identifiers.'],
+              ].map(([title,description])=><article key={title}><h3>{title}</h3><p>{description}</p></article>)}
+            </div>
+          </div>
+
+          <aside className="home-responsible">
+            <div className="home-section-kicker">RESPONSIBLE BY DESIGN</div>
+            <h2>Evidence without bypassing access controls.</h2>
+            <p>Discovery uses read-only requests against publicly reachable storage endpoints. BucketAudit does not bypass authentication, modify cloud resources, or claim ownership without supporting evidence.</p>
+            <ul>
+              <li><span>✓</span> Public endpoint checks only</li>
+              <li><span>✓</span> Reproducible access evidence</li>
+              <li><span>✓</span> Verified, inferred, or unverified attribution</li>
+              <li><span>✓</span> Monitoring and remediation workflows</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section className="home-final-cta">
+          <div><div className="home-section-kicker">START WITH YOUR EXTERNAL FOOTPRINT</div><h2>See what the public internet can already reach.</h2></div>
+          <button className="btn-primary" onClick={()=>{if(user){setScanForm({keywords:'',companies:'',providers:[]});setView('scan');loadScanHistory()}else{setAuthMode('register');setAuthError('');setAuthSuccess('');setView('auth')}}}>{user?'Run discovery scan':'Create free account'}</button>
+        </section>
+
+        <footer className="home-footer-note">BucketAudit is a defensive security platform for discovering and monitoring publicly accessible cloud storage. Use it only for authorized security and research purposes.</footer>
       </main>}
 
       {/* ─── SEARCH ─── */}
