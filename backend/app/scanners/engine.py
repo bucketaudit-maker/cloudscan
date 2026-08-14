@@ -26,10 +26,10 @@ import string
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 try:
     import aiohttp
@@ -37,6 +37,22 @@ except ImportError:
     aiohttp = None  # type: ignore — only needed when actually scanning
 
 logger = logging.getLogger(__name__)
+
+
+def describe_database_target(database_url: str) -> str:
+    """Return a credential-free database target suitable for production logs."""
+    if not database_url:
+        return "<empty>"
+    try:
+        parsed = urlsplit(database_url)
+        if parsed.scheme == "sqlite":
+            return f"sqlite:///{parsed.path.lstrip('/')}"
+        host = parsed.hostname or "<unknown-host>"
+        port = f":{parsed.port}" if parsed.port else ""
+        database = parsed.path.lstrip("/") or "<unknown-database>"
+        return f"{parsed.scheme}://{host}{port}/{database}"
+    except (TypeError, ValueError):
+        return "<invalid>"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -272,8 +288,12 @@ def generate_bucket_names(
         if 3 <= len(name) <= 63 and not name.startswith("xn--") and ".." not in name:
             valid.setdefault(name, company)
 
-    # Truncate to max_names
-    result = dict(list(valid.items())[:max_names])
+    # Keep targeted company candidates first, but rotate the broader pool so a
+    # recurring job does not probe the same deterministic prefix every run.
+    company_candidates = [(name, company) for name, company in valid.items() if company]
+    broad_candidates = [(name, company) for name, company in valid.items() if not company]
+    random.shuffle(broad_candidates)
+    result = dict((company_candidates + broad_candidates)[:max_names])
     logger.info(f"Generated {len(result)} valid bucket name candidates")
     return result
 
@@ -792,17 +812,52 @@ Examples:
     # Resolve providers
     target_providers = [Provider(p) for p in args.providers] if args.providers else list(Provider)
 
-    # DB setup (optional)
+    # A configured database is mandatory unless the operator explicitly opts out.
     db_store = None
+    scan_job_store = None
+    scan_job_id = None
+    db_stats_before = None
+    db_writes = {"results": 0, "files": 0, "errors": []}
     if not args.no_db:
         try:
             sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-            from backend.app.models.database import init_db, BucketStore, FileStore
+            from backend.app.config import settings
+            from backend.app.models.database import init_db, BucketStore, FileStore, ScanJobStore
+
             init_db()
             db_store = (BucketStore, FileStore)
-            logger.info("Database connected — results will be persisted")
-        except Exception as e:
-            logger.warning(f"Database unavailable ({e}) — results will only be printed")
+            scan_job_store = ScanJobStore
+            db_stats_before = FileStore.get_stats()
+            scan_job = ScanJobStore.create("discovery", {
+                "source": "scanner_cli",
+                "keywords": args.keywords,
+                "companies": args.companies,
+                "providers": [provider.value for provider in target_providers],
+                "max_names": args.max_names,
+                "regions_per_provider": args.regions,
+                "concurrency": args.concurrency,
+                "timeout": args.timeout,
+            })
+            scan_job_id = scan_job["id"]
+            ScanJobStore.update(
+                scan_job_id,
+                status="running",
+                started_at=datetime.now(timezone.utc).isoformat(),
+            )
+            logger.info(
+                "Database connected: %s (buckets=%s, open=%s, files=%s, scan_job_id=%s)",
+                describe_database_target(settings.DATABASE_URL),
+                db_stats_before["total_buckets"],
+                db_stats_before["open_buckets"],
+                db_stats_before["total_files"],
+                scan_job_id,
+            )
+        except Exception:
+            logger.exception(
+                "Database initialization failed; aborting because persistence is required. "
+                "Set DATABASE_URL to the API database or pass --no-db for an intentional dry run."
+            )
+            sys.exit(2)
 
     # Progress display
     open_buckets = []
@@ -846,9 +901,11 @@ Examples:
                         exposure_type=result.exposure_type,
                         evidence=result.evidence or None,
                     )
+                    db_writes["results"] += 1
                     if result.status == "open" and result.files:
-                        FStore.insert_batch(bucket["id"], result.files)
+                        db_writes["files"] += max(FStore.insert_batch(bucket["id"], result.files), 0)
                 except Exception as e:
+                    db_writes["errors"].append(f"{result.provider}/{result.name}: {e}")
                     logger.error(f"DB persist error for {result.name}: {e}")
 
     # Run scan
@@ -879,7 +936,39 @@ Examples:
         finally:
             await scanner.close()
 
-    results, final_progress = asyncio.run(_run())
+    try:
+        results, final_progress = asyncio.run(_run())
+    except Exception as exc:
+        if scan_job_store and scan_job_id:
+            try:
+                scan_job_store.update(
+                    scan_job_id,
+                    status="failed",
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                    errors=json.dumps({"fatal": str(exc)}),
+                )
+            except Exception:
+                logger.exception("Could not mark scan job %s as failed", scan_job_id)
+        raise
+
+    db_stats_after = None
+    if db_store:
+        _, FStore = db_store
+        db_stats_after = FStore.get_stats()
+        scan_status = "failed" if db_writes["errors"] else "completed"
+        scan_job_store.update(
+            scan_job_id,
+            status=scan_status,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            buckets_found=final_progress.buckets_found,
+            buckets_open=final_progress.buckets_open,
+            files_indexed=final_progress.files_indexed,
+            names_checked=final_progress.names_checked,
+            errors=json.dumps({
+                "scan_errors": final_progress.errors,
+                "persistence_errors": db_writes["errors"][:100],
+            }),
+        )
 
     # Summary
     print(f"\n\n{'═' * 60}")
@@ -896,8 +985,22 @@ Examples:
             print(f"    🟢 {b.provider}://{b.name} — {b.file_count} files — {b.url}")
 
     if db_store:
-        print(f"\n  ✓ Results saved to database")
+        bucket_delta = db_stats_after["total_buckets"] - db_stats_before["total_buckets"]
+        open_delta = db_stats_after["open_buckets"] - db_stats_before["open_buckets"]
+        file_delta = db_stats_after["total_files"] - db_stats_before["total_files"]
+        print(f"\n  Database writes: {db_writes['results']} bucket upserts, {db_writes['files']} new files")
+        print(
+            "  Database totals: "
+            f"{db_stats_after['total_buckets']} buckets ({bucket_delta:+d}), "
+            f"{db_stats_after['open_buckets']} open ({open_delta:+d}), "
+            f"{db_stats_after['total_files']} files ({file_delta:+d})"
+        )
+        print(f"  Scan job:        {scan_job_id}")
     print()
+
+    if db_writes["errors"]:
+        logger.error("Scan completed with %s database persistence error(s)", len(db_writes["errors"]))
+        sys.exit(3)
 
 
 if __name__ == "__main__":

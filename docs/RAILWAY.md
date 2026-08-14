@@ -105,9 +105,28 @@ For a run-to-completion scanner service, set this single-line start command on
 python -m backend.app.scanners.engine -p aws azure gcp digitalocean alibaba -k assets uploads backup public static data config logs -c bucketaudit cloudscan -n 500 -r 3 --concurrency 15 --timeout 15
 ```
 
-Reference the same `DATABASE_URL` used by the API. Do not configure public
-networking or a health-check path for this service. The scanner config disables
-restarts because a successful scan exits normally.
+The same command is checked into `/backend/railway.scanner.json`; a
+service-level command should only be used when intentionally overriding it.
+Set these variables on `scannerJob`:
+
+```dotenv
+APP_ENV=production
+DEBUG=false
+DATABASE_URL=${{postgres.DATABASE_URL}}
+SECRET_KEY=${{shared.SECRET_KEY}}
+RUN_DB_MIGRATIONS_ON_STARTUP=false
+AI_ENABLED=false
+```
+
+The `DATABASE_URL` reference must match the API's PostgreSQL service. Do not
+configure public networking or a health-check path for this service. The
+scanner config disables restarts because a successful scan exits normally.
+Every persisted CLI run creates a `scan_jobs` row and logs database totals
+before and after the scan. Database connection and write failures exit non-zero
+so Railway marks the run as failed. Recurring runs keep targeted company names
+at the front and rotate through the broader keyword candidate pool; a zero row
+delta can still be valid when all findings were existing rows or no buckets
+were discovered.
 
 ## 4. Deploy In Order
 

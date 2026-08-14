@@ -5,6 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
+    "startCommand": "python -m backend.app.scanners.engine -p aws azure gcp digitalocean alibaba -k assets uploads backup public static data config logs -c bucketaudit cloudscan -n 500 -r 3 --concurrency 15 --timeout 15",
     "restartPolicyType": "NEVER"
   }
 }

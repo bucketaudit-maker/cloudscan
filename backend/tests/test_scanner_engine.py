@@ -1,11 +1,23 @@
 import asyncio
+import random
 
 from backend.app.scanners.engine import (
     BucketScanner,
     Provider,
     attribution_for_candidate,
+    describe_database_target,
     generate_bucket_names,
 )
+
+
+def test_database_target_redacts_credentials():
+    target = describe_database_target(
+        "postgresql://cloudscan:top-secret@postgres.railway.internal:5432/railway"
+    )
+
+    assert target == "postgresql://postgres.railway.internal:5432/railway"
+    assert "cloudscan" not in target
+    assert "top-secret" not in target
 
 
 def test_company_candidates_survive_small_scan_limit():
@@ -25,6 +37,19 @@ def test_generic_candidates_are_not_attributed():
 
     assert len(names) == 10
     assert all(company == "" for company in names.values())
+
+
+def test_generic_candidates_rotate_between_scheduled_runs():
+    state = random.getstate()
+    try:
+        random.seed(1)
+        first = generate_bucket_names(keywords=["backup", "assets"], max_names=100)
+        random.seed(2)
+        second = generate_bucket_names(keywords=["backup", "assets"], max_names=100)
+    finally:
+        random.setstate(state)
+
+    assert set(first) != set(second)
 
 
 def test_company_attribution_is_explicitly_inferred():
