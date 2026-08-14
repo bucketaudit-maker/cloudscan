@@ -174,6 +174,21 @@ class TestAuth:
 
 
 class TestAPI:
+    def test_api_root_links_to_swagger(self, client):
+        r = client.get("/")
+
+        assert r.status_code == 200
+        assert r.get_json()["docs"] == "/api/v1/docs"
+
+    def test_swagger_ui_loads_relative_openapi_spec(self, client):
+        docs = client.get("/api/v1/docs")
+        spec = client.get("/api/v1/openapi.yaml")
+
+        assert docs.status_code == 200
+        assert "url: 'openapi.yaml'" in docs.get_data(as_text=True)
+        assert spec.status_code == 200
+        assert spec.get_data(as_text=True).startswith("openapi: 3.0.3")
+
     def test_health(self, client):
         r = client.get("/api/v1/health")
         assert r.status_code == 200

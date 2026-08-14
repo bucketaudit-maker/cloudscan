@@ -1490,7 +1490,7 @@ export default function App() {
         return <div style={{padding:'80px 24px 24px',maxWidth:960,margin:'0 auto'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:12}}>
             <h2 style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-display)',margin:0}}>REST API Reference</h2>
-            <a href="/api/v1/docs" target="_blank" rel="noopener" style={{fontSize:12,color:'var(--accent)',textDecoration:'none',border:'1px solid var(--accent)',borderRadius:6,padding:'5px 12px'}}>Open Swagger UI →</a>
+            <a href={`${API_BASE}/docs`} target="_blank" rel="noopener" style={{fontSize:12,color:'var(--accent)',textDecoration:'none',border:'1px solid var(--accent)',borderRadius:6,padding:'5px 12px'}}>Open Swagger UI →</a>
           </div>
           <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20}}>Click any endpoint to view request, response, and error details. Auth: Bearer token, API key header, or query param.</p>
           <div className="card-static" style={{padding:12,marginBottom:20,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>

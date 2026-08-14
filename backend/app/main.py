@@ -113,7 +113,7 @@ def create_app() -> Flask:
     # Health check at root
     @app.route("/")
     def root():
-        return {"name": "BucketAudit API", "version": "1.0.0", "docs": "/api/v1/health"}
+        return {"name": "BucketAudit API", "version": "1.0.0", "docs": "/api/v1/docs"}
 
     return app
 
