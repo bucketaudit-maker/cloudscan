@@ -802,6 +802,85 @@ nav button:hover:not(:disabled) {
   display: none;
 }
 
+.ai-insights-explainer {
+  margin-bottom: 24px;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 95% 0%, var(--ai-accent-glow), transparent 34%),
+    var(--bg-secondary);
+  border: 1px solid color-mix(in srgb, var(--ai-accent) 25%, var(--border-default));
+  border-radius: 14px;
+}
+
+.ai-insights-explainer-heading {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  gap: 36px;
+  align-items: end;
+  margin-bottom: 22px;
+}
+
+.ai-insights-explainer-heading span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ai-accent);
+  font: 700 9px var(--font-mono);
+  letter-spacing: 0.14em;
+}
+
+.ai-insights-explainer-heading h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font: 700 20px/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.ai-insights-explainer-heading p,
+.ai-capability-grid p {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.ai-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+
+.ai-capability-grid article {
+  min-height: 128px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg-primary) 78%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+}
+
+.ai-capability-grid h4 {
+  margin: 0 0 7px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.ai-insights-boundary {
+  margin-top: 14px;
+  padding: 12px 14px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--warning) 6%, var(--bg-primary));
+  border: 1px solid color-mix(in srgb, var(--warning) 24%, var(--border-subtle));
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.ai-insights-boundary strong {
+  color: var(--warning);
+}
+
+.ai-status-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 @media (max-width: 900px) {
   .primary-nav {
     max-width: calc(100vw - 245px);
@@ -828,6 +907,15 @@ nav button:hover:not(:disabled) {
   .home-scope {
     grid-template-columns: 1fr;
     gap: 28px;
+  }
+
+  .ai-insights-explainer-heading {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .ai-capability-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -1021,5 +1109,18 @@ nav button:hover:not(:disabled) {
 
   .home-footer-note {
     width: calc(100% - 36px);
+  }
+
+  .ai-insights-explainer {
+    padding: 18px;
+  }
+
+  .ai-capability-grid,
+  .ai-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-capability-grid article {
+    min-height: 0;
   }
 }

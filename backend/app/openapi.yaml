@@ -52,7 +52,12 @@ tags:
   - name: Monitoring
     description: Watchlists, alerts, and webhooks
   - name: AI
-    description: AI-powered classification, risk scoring, and search
+    description: >
+      Advisory analysis of indexed bucket and file metadata for natural-language
+      search, sensitivity classification, explainable risk scoring, alert
+      prioritization, discovery suggestions, and executive reporting. AI results
+      do not inspect private file contents, bypass access controls, or modify
+      cloud resources and should be validated before action.
   - name: Organizations
     description: Multi-tenant organization management
   - name: Notifications
@@ -1166,6 +1171,7 @@ paths:
       tags: [AI]
       summary: AI availability status
       operationId: aiStatus
+      description: Returns the active provider, configured providers, and available AI capabilities.
       responses:
         '200':
           description: AI provider status
@@ -1184,7 +1190,10 @@ paths:
       summary: Natural language search
       operationId: aiSearch
       security: [BearerAuth: [], ApiKeyAuth: []]
-      description: Interprets a natural language query into structured search parameters.
+      description: >
+        Converts a plain-English question into structured filters and searches
+        BucketAudit's indexed metadata. This endpoint does not query private cloud
+        storage or inspect file contents.
       requestBody:
         required: true
         content:
@@ -1202,9 +1211,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  interpretation: { type: string }
-                  search_params: { type: object }
-                  results: { type: object }
+                  original_query: { type: string }
+                  parsed_params: { type: object }
+                  items: { type: array, items: { type: object } }
+                  total: { type: integer }
+                  response_time_ms: { type: integer }
 
   /ai/classify/{bucket_id}:
     post:
@@ -1212,6 +1223,10 @@ paths:
       summary: Classify bucket files with AI
       operationId: classifyBucket
       security: [BearerAuth: [], ApiKeyAuth: []]
+      description: >
+        Assigns likely sensitivity categories using indexed file names, paths,
+        extensions, and sizes. Labels and confidence values are advisory and do
+        not prove the contents of a file.
       parameters:
         - name: bucket_id
           in: path
@@ -1226,7 +1241,29 @@ paths:
                 type: object
                 properties:
                   classified: { type: integer }
-                  classifications: { type: array, items: { type: object } }
+                  results: { type: array, items: { type: object } }
+
+  /ai/classifications:
+    get:
+      tags: [AI]
+      summary: Get file classification summary
+      operationId: classificationSummary
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: Returns stored advisory classification counts for all indexed files or one bucket.
+      parameters:
+        - name: bucket_id
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Classification counts by category
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary: { type: object, additionalProperties: { type: integer } }
 
   /ai/risk/{bucket_id}:
     post:
@@ -1234,6 +1271,9 @@ paths:
       summary: Calculate bucket risk score
       operationId: riskScore
       security: [BearerAuth: [], ApiKeyAuth: []]
+      description: >
+        Calculates an explainable advisory score from access state, indexed file
+        count, stored sensitivity classifications, and bucket-name patterns.
       parameters:
         - name: bucket_id
           in: path
@@ -1257,6 +1297,9 @@ paths:
       summary: Generate AI security report
       operationId: aiReport
       security: [BearerAuth: [], ApiKeyAuth: []]
+      description: >
+        Summarizes stored exposure, risk, and classification statistics into an
+        executive report with recommended priorities. It does not perform remediation.
       responses:
         '200':
           description: Generated report
@@ -1267,6 +1310,56 @@ paths:
                 properties:
                   report: { type: string }
                   generated_at: { type: string, format: date-time }
+
+  /ai/suggest-keywords:
+    post:
+      tags: [AI]
+      summary: Suggest bucket discovery keywords
+      operationId: suggestDiscoveryKeywords
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: >
+        Expands company, brand, or product context into candidate bucket-name
+        keywords for authorized discovery. Suggestions do not prove that a bucket
+        exists or belongs to the named organization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [company]
+              properties:
+                company: { type: string, example: "Acme Payments" }
+      responses:
+        '200':
+          description: Suggested discovery keywords
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  company: { type: string }
+                  suggestions: { type: array, items: { type: string } }
+
+  /ai/prioritize-alerts:
+    post:
+      tags: [AI]
+      summary: Prioritize unread monitoring alerts
+      operationId: prioritizeAlerts
+      security: [BearerAuth: [], ApiKeyAuth: []]
+      description: >
+        Assigns advisory priority scores to up to 50 unread alerts for analyst
+        triage. It does not resolve alerts or modify cloud resources.
+      responses:
+        '200':
+          description: Prioritized alerts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prioritized: { type: integer }
+                  alerts: { type: array, items: { type: object } }
 
   # ═══════════════════════════════════════════
   # DRIFT DETECTION

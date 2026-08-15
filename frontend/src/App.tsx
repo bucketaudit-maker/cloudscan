@@ -562,6 +562,8 @@ export default function App() {
                 ['Sensitive filenames','Backups, credentials, configuration, databases, source code, and operational logs.'],
                 ['Exposure changes','New buckets, changed access status, and files added or removed between scans.'],
                 ['Organization risk','Potential exposures associated with company, brand, product, or domain identifiers.'],
+                ['AI-assisted insights','Natural-language metadata search, sensitivity classification, risk rationale, and executive summaries.'],
+                ['Human-validated findings','AI recommendations support investigation but never modify cloud resources or replace analyst validation.'],
               ].map(([title,description])=><article key={title}><h3>{title}</h3><p>{description}</p></article>)}
             </div>
           </div>
@@ -869,16 +871,34 @@ export default function App() {
           {aiProviders.length>0&&<select value={aiProvider} onChange={e=>doSwitchProvider(e.target.value)} disabled={providerSwitching} style={{background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 8px',color:'var(--text-secondary)',fontSize:11,fontFamily:'var(--font-mono)',cursor:'pointer',opacity:providerSwitching?0.5:1}}>
             {aiProviders.map((p:any)=><option key={p.name} value={p.name} disabled={!p.available}>{p.display_name}{!p.available?' (unavailable)':''}</option>)}
           </select>}</div>
-        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:32}}>AI-powered analysis of your cloud storage security posture.</p>
+        <p style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20}}>Turn indexed cloud storage metadata into prioritized, explainable security findings.</p>
+
+        <section className="ai-insights-explainer" aria-labelledby="ai-insights-explainer-title">
+          <div className="ai-insights-explainer-heading">
+            <div><span>WHAT AI INSIGHTS DOES</span><h3 id="ai-insights-explainer-title">Security context for the data BucketAudit already indexed.</h3></div>
+            <p>AI Insights analyzes bucket access state and indexed file metadata such as names, paths, extensions, sizes, and counts. It helps analysts find, classify, prioritize, and explain potential exposure.</p>
+          </div>
+          <div className="ai-capability-grid">
+            {[
+              ['Natural-language search','Turns plain-English questions into structured searches across indexed metadata.'],
+              ['Sensitivity classification','Labels likely credentials, PII, financial, medical, infrastructure, source code, and database files.'],
+              ['Explainable risk scoring','Combines public access, file volume, classifications, and naming signals into a score with reasons.'],
+              ['Alert prioritization','Ranks monitoring alerts by likely security impact so analysts can review the most important first.'],
+              ['Executive summaries','Converts current findings into concise posture reports and prioritized remediation guidance.'],
+              ['Discovery suggestions','Expands company and product context into additional bucket-name keywords for authorized scans.'],
+            ].map(([title,description])=><article key={title}><h4>{title}</h4><p>{description}</p></article>)}
+          </div>
+          <div className="ai-insights-boundary"><strong>Important:</strong> Results are advisory and metadata-based. They do not inspect private file contents, prove that a filename contains sensitive data, bypass access controls, or automatically change cloud resources. Validate findings before acting.</div>
+        </section>
 
         {/* AI Status Card */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:32}}>
+        <div className="ai-status-grid" style={{display:'grid',gap:12,marginBottom:32}}>
           <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
             <div style={{fontSize:24,marginBottom:4}}>✦</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'#a855f7'}}>{aiAvail?'ON':'OFF'}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{aiAvail&&aiProvider?aiProviders.find((p:any)=>p.name===aiProvider)?.display_name||'AI Engine':'AI Engine'}</div></div>
           <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
             <div style={{fontSize:24,marginBottom:4}}>🛡</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'var(--accent)'}}>{stats?.total_buckets||0}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Buckets Indexed</div></div>
           <div style={{background:'var(--bg-secondary)',border:'1px solid var(--border-default)',borderRadius:12,padding:20,textAlign:'center'}}>
-            <div style={{fontSize:24,marginBottom:4}}>⬡</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'var(--info)'}}>{stats?.total_files||0}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Files Scanned</div></div>
+            <div style={{fontSize:24,marginBottom:4}}>⬡</div><div style={{fontSize:28,fontWeight:800,fontFamily:'var(--font-display)',color:'var(--info)'}}>{stats?.total_files||0}</div><div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Indexed Files Available</div></div>
         </div>
 
         {/* NL Search */}
@@ -1496,23 +1516,36 @@ export default function App() {
             reqSample:'{\n  "name": "Slack Alerts",\n  "url": "https://hooks.slack.com/services/T.../B.../xxx",\n  "event_types": ["critical", "high", "medium"]\n}',
             resSample:'{ "id": 2, "name": "Slack Alerts", "is_active": true }',
             errors:[{c:400,d:'Name and URL required'},{c:401,d:'Authentication required'}]},
-          {tag:'AI',m:'POST',p:'/ai/search',d:'Natural language search',auth:'optional',ai:true,
+          {tag:'AI',m:'POST',p:'/ai/search',d:'Search indexed metadata with plain English',auth:'optional',ai:true,
             params:[{n:'query',t:'string',r:true,d:'Natural language search query'}],
             reqSample:'{ "query": "find database backups from tech companies" }',
-            resSample:'{\n  "interpretation": "Searching for database backup files from technology companies",\n  "search_params": { "q": "backup.sql OR dump.sql", "ext": "sql" },\n  "results": { "items": [...], "total": 23 }\n}',
+            resSample:'{\n  "original_query": "find database backups from tech companies",\n  "parsed_params": { "q": "database backups", "ext": "sql" },\n  "items": [...],\n  "total": 23,\n  "response_time_ms": 148\n}',
+            notes:'Parses the question into filters and searches BucketAudit indexed metadata. It does not query private cloud storage or inspect file contents.',
             errors:[{c:400,d:'Query required'},{c:503,d:'AI provider unavailable'}]},
-          {tag:'AI',m:'POST',p:'/ai/classify/:id',d:'Classify bucket files using AI',auth:'optional',ai:true,
+          {tag:'AI',m:'POST',p:'/ai/classify/:id',d:'Classify likely file sensitivity from metadata',auth:'optional',ai:true,
             params:[{n:'bucket_id',t:'integer',r:true,d:'Bucket ID (path param)'}],
-            resSample:'{\n  "classified": 42,\n  "classifications": [\n    { "file_id": 1, "classification": "credentials", "confidence": 0.95 },\n    { "file_id": 2, "classification": "pii", "confidence": 0.87 }\n  ]\n}',
-            notes:'Classifications: credentials, pii, financial, medical, infrastructure, source_code, database, generic.',
+            resSample:'{\n  "classified": 42,\n  "results": [\n    { "filepath": ".env", "classification": "credentials", "confidence": 0.95 },\n    { "filepath": "exports/users.csv", "classification": "pii", "confidence": 0.87 }\n  ]\n}',
+            notes:'Uses indexed names, paths, extensions, and sizes. Classifications are advisory likelihoods, not proof of file contents. Categories: credentials, pii, financial, medical, infrastructure, source_code, database, generic.',
             errors:[{c:404,d:'Bucket not found'},{c:503,d:'AI provider unavailable'}]},
-          {tag:'AI',m:'POST',p:'/ai/risk/:id',d:'Calculate bucket risk score',auth:'optional',ai:true,
+          {tag:'AI',m:'POST',p:'/ai/risk/:id',d:'Calculate an explainable bucket risk score',auth:'optional',ai:true,
             params:[{n:'bucket_id',t:'integer',r:true,d:'Bucket ID (path param)'}],
             resSample:'{\n  "risk_score": 85,\n  "risk_level": "critical",\n  "factors": [\n    "Contains credentials files (.env, .pem)",\n    "Large number of exposed files (342)",\n    "PII detected in 12 files"\n  ]\n}',
+            notes:'Scores access state, indexed file count, sensitivity classifications, and risky bucket-name patterns. The response includes the factors behind the score.',
             errors:[{c:404,d:'Bucket not found'},{c:503,d:'AI provider unavailable'}]},
-          {tag:'AI',m:'POST',p:'/ai/report',d:'Generate AI security report',auth:'strict',ai:true,
+          {tag:'AI',m:'POST',p:'/ai/report',d:'Summarize indexed exposure and priorities',auth:'strict',ai:true,
             resSample:'{\n  "report": "## BucketAudit Security Report\\n\\n### Executive Summary\\n...",\n  "generated_at": "2026-03-22T10:00:00Z"\n}',
+            notes:'Produces an advisory summary from stored bucket, risk, and classification statistics. It recommends next steps but does not perform remediation.',
             errors:[{c:401,d:'Authentication required'},{c:503,d:'AI provider unavailable'}]},
+          {tag:'AI',m:'POST',p:'/ai/suggest-keywords',d:'Suggest discovery keywords from company context',auth:'optional',ai:true,
+            params:[{n:'company',t:'string',r:true,d:'Company, brand, or product name'}],
+            reqSample:'{ "company": "Acme Payments" }',
+            resSample:'{\n  "company": "Acme Payments",\n  "suggestions": ["acme-payments", "acme-backup", "acme-prod"]\n}',
+            notes:'Suggestions expand an authorized discovery scope; they are candidate names, not evidence that a bucket exists or belongs to the company.',
+            errors:[{c:400,d:'Company name required'},{c:401,d:'Authentication required'}]},
+          {tag:'AI',m:'POST',p:'/ai/prioritize-alerts',d:'Prioritize unread monitoring alerts',auth:'strict',ai:true,
+            resSample:'{\n  "prioritized": 8,\n  "alerts": [{ "id": 12, "ai_priority_score": 92, "severity": "critical" }]\n}',
+            notes:'Ranks up to 50 unread alerts for triage. Priority scores are advisory and do not resolve alerts or change cloud resources.',
+            errors:[{c:401,d:'Authentication required'}]},
           {tag:'Drift',m:'GET',p:'/drift/diffs',d:'List scan drift changes',auth:'strict',
             params:[{n:'severity',t:'string',r:false,d:'critical | high | medium | low | info'},{n:'unreviewed',t:'boolean',r:false,d:'Only unreviewed diffs'},{n:'page',t:'integer',r:false,d:'Page number'},{n:'per_page',t:'integer',r:false,d:'Results per page'}],
             resSample:'{\n  "items": [\n    {\n      "id": 1,\n      "bucket_id": 5,\n      "diff_type": "files_added",\n      "summary": "15 new files detected in company-backups",\n      "severity": "high",\n      "is_reviewed": false,\n      "created_at": "2026-03-22T10:05:00Z"\n    }\n  ],\n  "total": 8\n}',
@@ -1619,10 +1652,10 @@ export default function App() {
             ['API requests','100/day'],['Scans','3/day'],['Scan schedules','1'],['Keywords per scan','10'],['Providers','All 5'],['Search results','50/page'],['File preview','Basic'],['AI insights','—'],['Webhooks','—'],['Compliance','—'],['Organizations','—'],['Priority support','—'],
           ], limits:{scans:3,schedules:1,keywords:10,api:100} },
           { id:'premium', name:'Pro', price:'$29', period:'/month', color:'var(--accent)', desc:'For security professionals and small teams', popular:true, features:[
-            ['API requests','5,000/day'],['Scans','50/day'],['Scan schedules','10'],['Keywords per scan','100'],['Providers','All 5'],['Search results','200/page'],['File preview','Full + download'],['AI insights','Included'],['Webhooks','5'],['Compliance','Basic'],['Organizations','1 (5 seats)'],['Priority support','Email'],
+            ['API requests','5,000/day'],['Scans','50/day'],['Scan schedules','10'],['Keywords per scan','100'],['Providers','All 5'],['Search results','200/page'],['File preview','Full + download'],['AI insights','Search, classify, report'],['Webhooks','5'],['Compliance','Basic'],['Organizations','1 (5 seats)'],['Priority support','Email'],
           ], limits:{scans:50,schedules:10,keywords:100,api:5000} },
           { id:'enterprise', name:'Enterprise', price:'$149', period:'/month', color:'#a855f7', desc:'Unlimited power for large security operations', features:[
-            ['API requests','50,000/day'],['Scans','Unlimited'],['Scan schedules','Unlimited'],['Keywords per scan','Unlimited'],['Providers','All 5'],['Search results','Unlimited'],['File preview','Full + download + export'],['AI insights','Priority'],['Webhooks','Unlimited'],['Compliance','All frameworks'],['Organizations','Unlimited'],['Priority support','24/7 Slack + phone'],
+            ['API requests','50,000/day'],['Scans','Unlimited'],['Scan schedules','Unlimited'],['Keywords per scan','Unlimited'],['Providers','All 5'],['Search results','Unlimited'],['File preview','Full + download + export'],['AI insights','Search, classify, report'],['Webhooks','Unlimited'],['Compliance','All frameworks'],['Organizations','Unlimited'],['Priority support','24/7 Slack + phone'],
           ], limits:{scans:-1,schedules:-1,keywords:-1,api:50000} },
         ]
         return <div style={{padding:'80px 24px 24px',maxWidth:1100,margin:'0 auto'}}>
@@ -1676,7 +1709,7 @@ export default function App() {
                     ['Max Concurrent Scans','1','3','10'],
                     ['Search Results per Page','50','200','Unlimited'],
                     ['File Preview','Basic','Full + Download','Full + Export'],
-                    ['AI-Powered Insights','—','Included','Priority Queue'],
+                    ['AI Metadata Insights','—','Included','Included'],
                     ['Webhook Integrations','—','5','Unlimited'],
                     ['Compliance Frameworks','—','Basic (SOC2)','All (SOC2, HIPAA, PCI, GDPR)'],
                     ['Organization & Team','—','1 org / 5 seats','Unlimited orgs & seats'],
@@ -1701,6 +1734,7 @@ export default function App() {
                 ['How do rate limits work?','Each tier has a daily API request quota that resets at midnight UTC. Rate-limited requests receive HTTP 429 with a Retry-After header.'],
                 ['Can I upgrade mid-cycle?','Yes! Upgrades take effect immediately. You only pay the prorated difference for the remainder of your billing period.'],
                 ['What happens when I hit my scan limit?','You will receive a clear error message. Scheduled scans that exceed your limit are queued and run when your quota resets.'],
+                ['What does AI Insights analyze?','AI Insights analyzes indexed bucket and file metadata to support search, sensitivity classification, explainable risk scoring, alert prioritization, and reports. It does not inspect private file contents or automatically modify cloud resources.'],
                 ['Is there a free trial for Pro?','New accounts get a 14-day Pro trial with full access. No credit card required.'],
                 ['Can I downgrade my plan?','Yes, you can downgrade at any time. The change takes effect at your next billing cycle. Your data is retained.'],
                 ['Do you offer annual billing?','Yes! Annual plans save 20%. Contact us at bucketaudit@gmail.com for annual pricing.'],
